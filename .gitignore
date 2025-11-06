@@ -1,0 +1,88 @@
+# Dependencies
+node_modules/
+/.pnp
+.pnp.js
+
+# Testing
+/coverage
+*.log
+
+# Production builds
+/build
+/dist
+.next/
+out/
+
+# Environment variables
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# IDE and editors
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Operating System
+Thumbs.db
+desktop.ini
+
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+pnpm-debug.log*
+
+# Runtime data
+pids
+*.pid
+*.seed
+*.pid.lock
+
+# TypeScript
+*.tsbuildinfo
+next-env.d.ts
+
+# Debug
+.vscode-test
+
+# Local development
+.cache/
+tmp/
+temp/
+
+# Proctoring media (local files if any)
+backend/proctoring-media/*
+!backend/proctoring-media/.gitkeep
+
+# Backup files
+*.bak
+*.backup
+*.old
+
+# MongoDB dumps
+mongodb-backup/
+*.bson
+
+# Claude Code settings (keep only shared settings)
+.claude/settings.local.json
+
+# Package manager lock files (optional, but good to commit for consistency)
+# Uncomment if you want to ignore lock files
+# package-lock.json
+# yarn.lock
+# pnpm-lock.yaml
+
+# Vercel
+.vercel
+
+# Turbo
+.turbo
