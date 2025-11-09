@@ -1,5 +1,19 @@
 import type { OrganizationPlan } from "@/lib/auth-context"
 
+/** Standard pagination meta used across admin endpoints */
+export interface PaginationMeta {
+  page: number
+  limit: number
+  total: number
+  pages: number
+}
+
+/** Standard paginated response shape (always includes `pagination`) */
+export interface PaginatedResponse<T> {
+  items: T[]
+  pagination: PaginationMeta
+}
+
 export interface OrganizationRecord {
   id: string
   name: string
@@ -12,21 +26,28 @@ export interface OrganizationRecord {
   primaryContact: string
 }
 
+export type AdminUserRole = "admin" | "recruiter"
+export type AdminUserStatus = "active" | "invited" | "suspended"
+
 export interface AdminUserRecord {
   id: string
   name: string
   email: string
-  role: "admin" | "recruiter"
-  status: "active" | "invited" | "suspended"
-  lastLogin?: string
+  role: AdminUserRole
+  status: AdminUserStatus
+  /** ISO string or null when never logged in */
+  lastLogin?: string | null
 }
+
+export type AuditCategory = "auth" | "security" | "system"
+export type AuditStatus = "success" | "warning" | "error"
 
 export interface AuditLogRecord {
   id: string
-  timestamp: string
-  category: "auth" | "security" | "system"
+  timestamp: string // ISO
+  category: AuditCategory
   action: string
   actor: string
-  status: "success" | "warning" | "error"
+  status: AuditStatus
   metadata: string
 }

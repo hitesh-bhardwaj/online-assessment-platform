@@ -56,11 +56,12 @@ export function DashboardShell({
 
   return (
     <SidebarProvider defaultOpen={true}>
+      <div className="flex w-full">
         <AppSidebar items={filteredNavItems} user={user} onLogout={logout} />
 
         <SidebarInset>
 
-          <header className="bg-background sticky top-0 flex h-16 items-center gap-2 border-b px-4 z-1">
+          <header className="bg-background sticky top-0 flex h-[8vh] items-center gap-2 border-b px-4 z-1">
             <div className="flex justify-between items-center w-full px-4">
               <div className="flex items-center gap-2">
                 <SidebarTrigger />
@@ -104,6 +105,8 @@ export function DashboardShell({
             </div>
           </div>
         </SidebarInset>
+
+      </div>
     </SidebarProvider>
   )
 }

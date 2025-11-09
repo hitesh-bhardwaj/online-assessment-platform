@@ -39,7 +39,6 @@ function mapUsers(users: BackendUser[]): AdminUserRecord[] {
 
 export async function GET(request: NextRequest) {
   const { accessToken } = await getAuthCookies()
-
   if (!accessToken) {
     return NextResponse.json({ success: false, message: "Not authenticated" }, { status: 401 })
   }
@@ -48,43 +47,34 @@ export async function GET(request: NextRequest) {
     const searchParams = request.nextUrl.searchParams
     const query = new URLSearchParams(searchParams)
 
-    if (!query.has("limit")) {
-      query.set("limit", "20")
-    }
-
-    if (!query.has("page")) {
-      query.set("page", "1")
-    }
+    if (!query.has("limit")) query.set("limit", "20")
+    if (!query.has("page")) query.set("page", "1")
 
     const response = await backendRequest<UsersResponse>(`/users?${query.toString()}`, {
       method: "GET",
       token: accessToken,
     })
 
-    const summaries = mapUsers(response.data.users)
+    const items = mapUsers(response.data.users)
+    const pagination =
+      response.data.pagination ?? {
+        page: Number(query.get("page") ?? 1),
+        limit: Number(query.get("limit") ??( items.length || 10)),
+        total: items.length,
+        pages: Math.max(1, Math.ceil((items.length || 1) / Number(query.get("limit") ?? 10))),
+      }
 
-    return NextResponse.json({
-      items: summaries,
-      pagination:
-        response.data.pagination ?? {
-          page: Number(query.get("page") ?? 1),
-          limit: Number(query.get("limit") ?? summaries.length),
-          total: summaries.length,
-          pages: 1,
-        },
-    })
+    return NextResponse.json({ items, pagination }, { status: 200 })
   } catch (error) {
     if (error instanceof BackendError) {
       return NextResponse.json({ success: false, message: error.message }, { status: error.status })
     }
-
     throw error
   }
 }
 
 export async function POST(request: NextRequest) {
   const { accessToken } = await getAuthCookies()
-
   if (!accessToken) {
     return NextResponse.json({ success: false, message: "Not authenticated" }, { status: 401 })
   }
@@ -105,19 +95,18 @@ export async function POST(request: NextRequest) {
   if (!email || !email.includes("@")) {
     return NextResponse.json({ success: false, message: "Email is required" }, { status: 400 })
   }
-
   if (!firstName) {
     return NextResponse.json({ success: false, message: "First name is required" }, { status: 400 })
   }
-
   if (!lastName) {
     return NextResponse.json({ success: false, message: "Last name is required" }, { status: 400 })
   }
-
   if (password.length < 8) {
-    return NextResponse.json({ success: false, message: "Password must be at least 8 characters" }, { status: 400 })
+    return NextResponse.json(
+      { success: false, message: "Password must be at least 8 characters" },
+      { status: 400 }
+    )
   }
-
   if (role !== "admin" && role !== "recruiter") {
     return NextResponse.json({ success: false, message: "Role must be admin or recruiter" }, { status: 400 })
   }
@@ -126,22 +115,21 @@ export async function POST(request: NextRequest) {
     const response = await backendRequest<CreateUserResponse>("/users", {
       method: "POST",
       token: accessToken,
-      json: {
-        email,
-        password,
-        firstName,
-        lastName,
-        role,
-      },
+      json: { email, password, firstName, lastName, role },
     })
 
     const record = toAdminUserRecord(response.data)
     return NextResponse.json(record, { status: 201 })
   } catch (error) {
     if (error instanceof BackendError) {
-      return NextResponse.json({ success: false, message: error.message }, { status: error.status })
+      // normalize “already exists” to 409 for the UI
+      const message =
+        error.status === 409 || /exists/i.test(error.message)
+          ? "User with this email already exists in your organization"
+          : error.message
+      const status = error.status === 409 || /exists/i.test(error.message) ? 409 : error.status
+      return NextResponse.json({ success: false, message }, { status })
     }
-
     throw error
   }
 }

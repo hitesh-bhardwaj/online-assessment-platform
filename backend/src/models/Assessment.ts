@@ -339,7 +339,7 @@ AssessmentSchema.methods.canBePublished = async function(): Promise<{valid: bool
   // Check if all questions are active
   if (this.questions && this.questions.length > 0) {
     const { Question } = await import('./index');
-    const questionIds = this.questions.map(q => q.questionId);
+    const questionIds = this.questions.map((q: { questionId: any; }) => q.questionId);
     const activeQuestions = await Question.countDocuments({
       _id: { $in: questionIds },
       isActive: true,

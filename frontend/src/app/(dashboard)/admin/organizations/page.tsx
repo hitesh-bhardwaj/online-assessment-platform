@@ -1,14 +1,20 @@
-"use client"
+'use client';
 
-import { zodResolver } from "@hookform/resolvers/zod"
-import { Loader2, Pencil } from "lucide-react"
-import { useEffect, useMemo, useState } from "react"
-import { useForm, type Resolver } from "react-hook-form"
-import * as z from "zod"
+import { zodResolver } from '@hookform/resolvers/zod';
+import { Cross, Loader2, Pencil, X } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { useForm, type Resolver } from 'react-hook-form';
+import * as z from 'zod';
 
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
-import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Button } from '@/components/ui/button';
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card';
 import {
   Form,
   FormControl,
@@ -17,19 +23,22 @@ import {
   FormItem,
   FormLabel,
   FormMessage,
-} from "@/components/ui/form"
-import { Input } from "@/components/ui/input"
-import { Switch } from "@/components/ui/switch"
-import { Textarea } from "@/components/ui/textarea"
-import { useAdminOrganizations, useUpdateAdminOrganization } from "@/hooks/use-admin-organizations"
-import { cn } from "@/lib/utils"
+} from '@/components/ui/form';
+import { Input } from '@/components/ui/input';
+import { Switch } from '@/components/ui/switch';
+import { Textarea } from '@/components/ui/textarea';
+import {
+  useAdminOrganizations,
+  useUpdateAdminOrganization,
+} from '@/hooks/use-admin-organizations';
+import { cn } from '@/lib/utils';
 
 const organizationSchema = z.object({
-  name: z.string().min(2, "Name is required"),
-  domain: z.string().min(2, "Domain is required"),
-  contactEmail: z.string().email("Enter a valid contact email"),
+  name: z.string().min(2, 'Name is required'),
+  domain: z.string().min(2, 'Domain is required'),
+  contactEmail: z.string().email('Enter a valid contact email'),
   branding: z.object({
-    logoUrl: z.string().url("Enter a valid URL").optional().or(z.literal("")),
+    logoUrl: z.string().url('Enter a valid URL').optional().or(z.literal('')),
     primaryColor: z.string().optional(),
     secondaryColor: z.string().optional(),
     welcomeMessage: z.string().optional(),
@@ -40,33 +49,41 @@ const organizationSchema = z.object({
     allowCandidateDataDownload: z.boolean().default(false),
     requireProctoringConsent: z.boolean().default(false),
   }),
-})
+});
 
-type OrganizationFormValues = z.infer<typeof organizationSchema>
+type OrganizationFormValues = z.infer<typeof organizationSchema>;
 
 type BrandingDefaults = {
-  logoUrl: string
-  primaryColor: string
-  secondaryColor: string
-  welcomeMessage: string
-}
+  logoUrl: string;
+  primaryColor: string;
+  secondaryColor: string;
+  welcomeMessage: string;
+};
 
 function extractBrandingDefaults(raw: unknown): BrandingDefaults {
-  const source = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {}
-  const emailTemplates = source.emailTemplates
+  const source =
+    raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {};
+  const emailTemplates = source.emailTemplates;
   const welcome =
     emailTemplates &&
     typeof emailTemplates === 'object' &&
     typeof (emailTemplates as Record<string, unknown>).welcome === 'string'
       ? ((emailTemplates as Record<string, unknown>).welcome as string)
-      : ''
+      : '';
 
   return {
-    logoUrl: typeof source.logoUrl === 'string' ? (source.logoUrl as string) : '',
-    primaryColor: typeof source.primaryColor === 'string' ? (source.primaryColor as string) : '',
-    secondaryColor: typeof source.secondaryColor === 'string' ? (source.secondaryColor as string) : '',
+    logoUrl:
+      typeof source.logoUrl === 'string' ? (source.logoUrl as string) : '',
+    primaryColor:
+      typeof source.primaryColor === 'string'
+        ? (source.primaryColor as string)
+        : '',
+    secondaryColor:
+      typeof source.secondaryColor === 'string'
+        ? (source.secondaryColor as string)
+        : '',
     welcomeMessage: welcome,
-  }
+  };
 }
 
 function buildBrandingPayload(branding: OrganizationFormValues['branding']) {
@@ -74,42 +91,55 @@ function buildBrandingPayload(branding: OrganizationFormValues['branding']) {
     logoUrl: branding.logoUrl || undefined,
     primaryColor: branding.primaryColor || undefined,
     secondaryColor: branding.secondaryColor || undefined,
-    emailTemplates: branding.welcomeMessage ? { welcome: branding.welcomeMessage } : undefined,
-  }
+    emailTemplates: branding.welcomeMessage
+      ? { welcome: branding.welcomeMessage }
+      : undefined,
+  };
 }
 
 export default function AdminOrganizationsPage() {
-  const { data, isLoading, isError, error } = useAdminOrganizations()
-  const updateMutation = useUpdateAdminOrganization()
+  const { data, isLoading, isError, error } = useAdminOrganizations();
+  const updateMutation = useUpdateAdminOrganization();
 
-  const initialSummary = data?.summary
-  const organization = data?.organization
+  const initialSummary = data?.summary;
+  const organization = data?.organization;
 
   const defaultValues = useMemo<OrganizationFormValues>(() => {
     return {
-      name: (organization?.name as string) ?? initialSummary?.name ?? "",
-      domain: (organization?.domain as string) ?? initialSummary?.domain ?? "",
-      contactEmail: organization?.contactEmail ?? initialSummary?.primaryContact ?? "",
+      name: (organization?.name as string) ?? initialSummary?.name ?? '',
+      domain: (organization?.domain as string) ?? initialSummary?.domain ?? '',
+      contactEmail:
+        organization?.contactEmail ?? initialSummary?.primaryContact ?? '',
       branding: extractBrandingDefaults(organization?.branding ?? {}),
       settings: {
-        dataRetentionDays: organization?.settings?.dataRetentionDays ?? initialSummary?.dataRetentionDays ?? 365,
-        gdprCompliant: organization?.settings?.gdprCompliant ?? initialSummary?.gdprCompliant ?? false,
-        allowCandidateDataDownload: organization?.settings?.allowCandidateDataDownload ?? false,
-        requireProctoringConsent: organization?.settings?.requireProctoringConsent ?? false,
+        dataRetentionDays:
+          organization?.settings?.dataRetentionDays ??
+          initialSummary?.dataRetentionDays ??
+          365,
+        gdprCompliant:
+          organization?.settings?.gdprCompliant ??
+          initialSummary?.gdprCompliant ??
+          false,
+        allowCandidateDataDownload:
+          organization?.settings?.allowCandidateDataDownload ?? false,
+        requireProctoringConsent:
+          organization?.settings?.requireProctoringConsent ?? false,
       },
-    }
-  }, [initialSummary, organization])
+    };
+  }, [initialSummary, organization]);
 
   const form = useForm<OrganizationFormValues>({
-    resolver: zodResolver(organizationSchema) as Resolver<OrganizationFormValues>,
+    resolver: zodResolver(
+      organizationSchema
+    ) as Resolver<OrganizationFormValues>,
     defaultValues,
-  })
+  });
 
   useEffect(() => {
-    form.reset(defaultValues)
-  }, [defaultValues, form])
+    form.reset(defaultValues);
+  }, [defaultValues, form]);
 
-  const [isEditing, setEditing] = useState(false)
+  const [isEditing, setEditing] = useState(false);
 
   const handleSubmit = form.handleSubmit(async (values) => {
     const payload = {
@@ -123,11 +153,11 @@ export default function AdminOrganizationsPage() {
         allowCandidateDataDownload: values.settings.allowCandidateDataDownload,
         requireProctoringConsent: values.settings.requireProctoringConsent,
       },
-    }
+    };
 
-    await updateMutation.mutateAsync(payload)
-    setEditing(false)
-  })
+    await updateMutation.mutateAsync(payload);
+    setEditing(false);
+  });
 
   if (isLoading && !data) {
     return (
@@ -135,7 +165,9 @@ export default function AdminOrganizationsPage() {
         <Card>
           <CardHeader>
             <CardTitle>Loading organization…</CardTitle>
-            <CardDescription>Please wait while we fetch the latest configuration.</CardDescription>
+            <CardDescription>
+              Please wait while we fetch the latest configuration.
+            </CardDescription>
           </CardHeader>
           <CardContent className="grid gap-4 md:grid-cols-2">
             <SkeletonField />
@@ -145,7 +177,7 @@ export default function AdminOrganizationsPage() {
           </CardContent>
         </Card>
       </div>
-    )
+    );
   }
 
   return (
@@ -153,7 +185,9 @@ export default function AdminOrganizationsPage() {
       {isError ? (
         <Alert variant="destructive">
           <AlertTitle>Unable to load organization settings</AlertTitle>
-          <AlertDescription>{(error as Error)?.message ?? "Please verify the admin API."}</AlertDescription>
+          <AlertDescription>
+            {(error as Error)?.message ?? 'Please verify the admin API.'}
+          </AlertDescription>
         </Alert>
       ) : null}
 
@@ -162,13 +196,18 @@ export default function AdminOrganizationsPage() {
           <div>
             <CardTitle>Organization profile</CardTitle>
             <CardDescription>
-              Manage the name, domain, and contact details for your organization. Updates propagate to branding assets and
-              invitation emails.
+              Manage the name, domain, and contact details for your
+              organization. Updates propagate to branding assets and invitation
+              emails.
             </CardDescription>
           </div>
-          <Button variant={isEditing ? "secondary" : "outline"} size="sm" onClick={() => setEditing((prev) => !prev)}>
-            <Pencil className="mr-2 size-4" />
-            {isEditing ? "Cancel" : "Edit"}
+          <Button
+            variant={isEditing ? 'secondary' : 'outline'}
+            size="sm"
+            onClick={() => setEditing((prev) => !prev)}
+          >
+            {isEditing ? <X /> : <Pencil className="mr-2 size-4" />}
+            {isEditing ? 'Cancel' : 'Edit'}
           </Button>
         </CardHeader>
         <CardContent>
@@ -182,7 +221,11 @@ export default function AdminOrganizationsPage() {
                     <FormItem>
                       <FormLabel>Organization name</FormLabel>
                       <FormControl>
-                        <Input placeholder="Acme Talent" disabled={!isEditing || updateMutation.isPending} {...field} />
+                        <Input
+                          placeholder="Acme Talent"
+                          disabled={!isEditing || updateMutation.isPending}
+                          {...field}
+                        />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -195,9 +238,15 @@ export default function AdminOrganizationsPage() {
                     <FormItem>
                       <FormLabel>Primary domain</FormLabel>
                       <FormControl>
-                        <Input placeholder="acme.io" disabled={!isEditing || updateMutation.isPending} {...field} />
+                        <Input
+                          placeholder="acme.io"
+                          disabled={!isEditing || updateMutation.isPending}
+                          {...field}
+                        />
                       </FormControl>
-                      <FormDescription>Used when generating candidate invite links and emails.</FormDescription>
+                      <FormDescription>
+                        Used when generating candidate invite links and emails.
+                      </FormDescription>
                       <FormMessage />
                     </FormItem>
                   )}
@@ -235,7 +284,9 @@ export default function AdminOrganizationsPage() {
                           {...field}
                         />
                       </FormControl>
-                      <FormDescription>Displayed on white-labeled candidate experiences.</FormDescription>
+                      <FormDescription>
+                        Displayed on white-labeled candidate experiences.
+                      </FormDescription>
                       <FormMessage />
                     </FormItem>
                   )}
@@ -247,7 +298,11 @@ export default function AdminOrganizationsPage() {
                     <FormItem>
                       <FormLabel>Primary color</FormLabel>
                       <FormControl>
-                        <Input placeholder="#0052cc" disabled={!isEditing || updateMutation.isPending} {...field} />
+                        <Input
+                          placeholder="#0052cc"
+                          disabled={!isEditing || updateMutation.isPending}
+                          {...field}
+                        />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -260,7 +315,11 @@ export default function AdminOrganizationsPage() {
                     <FormItem>
                       <FormLabel>Secondary color</FormLabel>
                       <FormControl>
-                        <Input placeholder="#edf2ff" disabled={!isEditing || updateMutation.isPending} {...field} />
+                        <Input
+                          placeholder="#edf2ff"
+                          disabled={!isEditing || updateMutation.isPending}
+                          {...field}
+                        />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -294,9 +353,18 @@ export default function AdminOrganizationsPage() {
                     <FormItem>
                       <FormLabel>Data retention (days)</FormLabel>
                       <FormControl>
-                        <Input type="number" min={7} max={3650} disabled={!isEditing || updateMutation.isPending} {...field} />
+                        <Input
+                          type="number"
+                          min={7}
+                          max={3650}
+                          disabled={!isEditing || updateMutation.isPending}
+                          {...field}
+                        />
                       </FormControl>
-                      <FormDescription>Controls how long candidate data is kept after completion.</FormDescription>
+                      <FormDescription>
+                        Controls how long candidate data is kept after
+                        completion.
+                      </FormDescription>
                       <FormMessage />
                     </FormItem>
                   )}
@@ -309,10 +377,16 @@ export default function AdminOrganizationsPage() {
                       <div className="flex items-center justify-between gap-2">
                         <FormLabel>GDPR compliance</FormLabel>
                         <FormControl>
-                          <Switch disabled={!isEditing || updateMutation.isPending} checked={field.value} onCheckedChange={field.onChange} />
+                          <Switch
+                            disabled={!isEditing || updateMutation.isPending}
+                            checked={field.value}
+                            onCheckedChange={field.onChange}
+                          />
                         </FormControl>
                       </div>
-                      <FormDescription>Display GDPR controls to candidates.</FormDescription>
+                      <FormDescription>
+                        Display GDPR controls to candidates.
+                      </FormDescription>
                     </FormItem>
                   )}
                 />
@@ -324,10 +398,16 @@ export default function AdminOrganizationsPage() {
                       <div className="flex items-center justify-between gap-2">
                         <FormLabel>Allow data download</FormLabel>
                         <FormControl>
-                          <Switch disabled={!isEditing || updateMutation.isPending} checked={field.value} onCheckedChange={field.onChange} />
+                          <Switch
+                            disabled={!isEditing || updateMutation.isPending}
+                            checked={field.value}
+                            onCheckedChange={field.onChange}
+                          />
                         </FormControl>
                       </div>
-                      <FormDescription>Let candidates export their submissions.</FormDescription>
+                      <FormDescription>
+                        Let candidates export their submissions.
+                      </FormDescription>
                     </FormItem>
                   )}
                 />
@@ -339,10 +419,16 @@ export default function AdminOrganizationsPage() {
                       <div className="flex items-center justify-between gap-2">
                         <FormLabel>Require proctoring consent</FormLabel>
                         <FormControl>
-                          <Switch disabled={!isEditing || updateMutation.isPending} checked={field.value} onCheckedChange={field.onChange} />
+                          <Switch
+                            disabled={!isEditing || updateMutation.isPending}
+                            checked={field.value}
+                            onCheckedChange={field.onChange}
+                          />
                         </FormControl>
                       </div>
-                      <FormDescription>Show a consent step before launching assessments.</FormDescription>
+                      <FormDescription>
+                        Show a consent step before launching assessments.
+                      </FormDescription>
                     </FormItem>
                   )}
                 />
@@ -356,19 +442,23 @@ export default function AdminOrganizationsPage() {
                     size="sm"
                     disabled={updateMutation.isPending}
                     onClick={() => {
-                      form.reset(defaultValues)
-                      setEditing(false)
+                      form.reset(defaultValues);
+                      setEditing(false);
                     }}
                   >
                     Cancel
                   </Button>
-                  <Button type="submit" size="sm" disabled={updateMutation.isPending}>
+                  <Button
+                    type="submit"
+                    size="sm"
+                    disabled={updateMutation.isPending}
+                  >
                     {updateMutation.isPending ? (
                       <span className="flex items-center gap-2">
                         <Loader2 className="size-4 animate-spin" /> Saving
                       </span>
                     ) : (
-                      "Save changes"
+                      'Save changes'
                     )}
                   </Button>
                 </div>
@@ -382,34 +472,60 @@ export default function AdminOrganizationsPage() {
         <Card>
           <CardHeader>
             <CardTitle>Usage & limits</CardTitle>
-            <CardDescription>Seat allocation and plan information pulled from the usage API.</CardDescription>
+            <CardDescription>
+              Seat allocation and plan information pulled from the usage API.
+            </CardDescription>
           </CardHeader>
           <CardContent className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-            <UsageMetric label="Seats used" value={`${initialSummary.seatsUsed}`} helper="Licensed seats currently in use" />
-            <UsageMetric label="Seat limit" value={`${initialSummary.seatLimit || "Unlimited"}`} helper="Plan allocation" />
-            <UsageMetric label="Plan" value={`${initialSummary.plan}`} helper="Subscription tier" />
+            <UsageMetric
+              label="Seats used"
+              value={`${initialSummary.seatsUsed}`}
+              helper="Licensed seats currently in use"
+            />
+            <UsageMetric
+              label="Seat limit"
+              value={`${initialSummary.seatLimit || 'Unlimited'}`}
+              helper="Plan allocation"
+            />
+            <UsageMetric
+              label="Plan"
+              value={`${initialSummary.plan}`}
+              helper="Subscription tier"
+            />
             <UsageMetric
               label="Data retention"
               value={`${initialSummary.dataRetentionDays} days`}
-              helper={initialSummary.gdprCompliant ? "GDPR enabled" : "GDPR disabled"}
+              helper={
+                initialSummary.gdprCompliant ? 'GDPR enabled' : 'GDPR disabled'
+              }
             />
           </CardContent>
         </Card>
       ) : null}
     </div>
-  )
+  );
 }
 
 function SkeletonField({ className }: { className?: string }) {
-  return <div className={cn("h-12 rounded-md bg-muted/40", className)} />
+  return <div className={cn('h-12 rounded-md bg-muted/40', className)} />;
 }
 
-function UsageMetric({ label, value, helper }: { label: string; value: string; helper: string }) {
+function UsageMetric({
+  label,
+  value,
+  helper,
+}: {
+  label: string;
+  value: string;
+  helper: string;
+}) {
   return (
     <div className="rounded-lg border border-dashed border-border/70 bg-muted/40 p-4">
-      <p className="text-xs uppercase tracking-wide text-muted-foreground">{label}</p>
+      <p className="text-xs uppercase tracking-wide text-muted-foreground">
+        {label}
+      </p>
       <p className="mt-2 text-2xl font-semibold">{value}</p>
       <p className="text-xs text-muted-foreground/80">{helper}</p>
     </div>
-  )
+  );
 }
