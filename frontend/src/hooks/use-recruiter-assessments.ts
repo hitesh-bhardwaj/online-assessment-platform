@@ -12,7 +12,7 @@ export interface RecruiterAssessmentsQuery {
   limit?: number
   type?: "mcq" | "coding" | "mixed"
   status?: "draft" | "published" | "archived"
-  search?: string
+  search?: string,
 }
 
 export function useRecruiterAssessments(params?: RecruiterAssessmentsQuery) {

@@ -28,38 +28,87 @@ export interface PaginatedResponse<T> {
   pagination: PaginationMeta
 }
 
+// export interface BackendAssessment {
+//   _id: string
+//   title: string
+//   type: "mcq" | "coding" | "mixed"
+//   isPublished: boolean
+//   status?: string
+//   questions: Array<{
+//     questionId: string | { _id: string }
+//   }>
+//   settings?: {
+//     durationMinutes?: number
+//   }
+//   updatedAt?: string
+//   createdAt?: string
+//   timeLimit?: number
+// }
 export interface BackendAssessment {
   _id: string
   title: string
   type: "mcq" | "coding" | "mixed"
   isPublished: boolean
   status?: string
-  questions: Array<{
-    questionId: string | { _id: string }
-  }>
+  questions: Array<{ questionId: string | { _id: string } }>
   settings?: {
     durationMinutes?: number
+    timeLimit?: number
   }
+  // 👇 add this (some list endpoints return it here)
+  durationMinutes?: number
+  // optional: if your backend starts sending it top-level
+  timeLimit?: number
   updatedAt?: string
   createdAt?: string
 }
+
 
 export type BackendAssessmentsResponse = BackendPagination<{
   assessments: BackendAssessment[]
 }>
 
+// export function toAssessmentSummary(input: BackendAssessment): AssessmentSummary {
+//   const lastUpdated = input.updatedAt ?? input.createdAt ?? new Date().toISOString()
+//   return {
+//     id: input._id,
+//     title: input.title,
+//     type: input.type,
+//     status: (input.status as AssessmentSummary["status"]) ?? (input.isPublished ? "published" : "draft"),
+//     questions: input.questions?.length ?? 0,
+//     durationMinutes: input.settings?.durationMinutes ?? 0,
+//     timeLimit: input.timeLimit,
+//     lastUpdated,
+//   }
+// }
+
 export function toAssessmentSummary(input: BackendAssessment): AssessmentSummary {
   const lastUpdated = input.updatedAt ?? input.createdAt ?? new Date().toISOString()
+
+  const normalizedStatus =
+    (input.status as AssessmentSummary["status"]) ??
+    (input.isPublished ? "published" : "draft")
+  const status = normalizedStatus === "active" ? "published" : normalizedStatus
+
+  const timeLimit =
+    input.timeLimit ??
+    input.settings?.timeLimit ??                
+    input.settings?.durationMinutes ??
+    (input as any).durationMinutes ??
+    0
+
   return {
     id: input._id,
     title: input.title,
     type: input.type,
-    status: (input.status as AssessmentSummary["status"]) ?? (input.isPublished ? "published" : "draft"),
+    status,
     questions: input.questions?.length ?? 0,
-    durationMinutes: input.settings?.durationMinutes ?? 0,
+    timeLimit,
     lastUpdated,
   }
 }
+
+
 
 export interface BackendInvitation {
   _id: string
@@ -73,6 +122,7 @@ export interface BackendInvitation {
     title?: string
   } | string
   status: InvitationSummary["status"]
+  
   createdAt?: string
   validUntil?: string
   validFrom?: string

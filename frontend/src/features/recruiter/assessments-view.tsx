@@ -3,9 +3,7 @@
 import Link from "next/link"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
-
 import { Archive, Loader2 } from "lucide-react"
-
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -175,13 +173,19 @@ export function RecruiterAssessmentsView({
       },
     [data, page]
   )
-
   const publishedCount = assessments.filter((assessment) => assessment.status === "published").length
   const draftCount = assessments.filter((assessment) => assessment.status === "draft").length
   const archivedCount = assessments.filter((assessment) => assessment.status === "archived").length
+  // const averageDuration = assessments.length
+  //   ? Math.round(assessments.reduce((total, current) => total + current.durationMinutes, 0) / assessments.length)
+  //   : 0
+  // const averageDuration = assessments.length
+  // ? Math.ceil(assessments.reduce((total, current) => total + (current.timeLimit ?? 0), 0) / assessments.length)
+  // : 0
   const averageDuration = assessments.length
-    ? Math.round(assessments.reduce((total, current) => total + current.durationMinutes, 0) / assessments.length)
-    : 0
+  ? (assessments.reduce((total, current) => total + (current.timeLimit ?? 0), 0) / assessments.length).toFixed(1)
+  : "0.0"
+
 
   useEffect(() => {
     return () => {
@@ -394,6 +398,8 @@ export function RecruiterAssessmentsView({
       setArchiveContext(null)
     },
   })
+  
+
 
   const rangeLabel = useMemo(() => {
     if (pagination.total === 0) return "0–0"
@@ -593,13 +599,24 @@ export function RecruiterAssessmentsView({
         className: "w-[110px] text-right",
         headerClassName: "text-right",
       },
+      // {
+      //   key: "duration",
+      //   header: "Duration",
+      //   cell: (row) => <span>{row.durationMinutes} min</span>,
+      //   className: "w-[110px] text-right",
+      //   headerClassName: "text-right",
+      // },
       {
-        key: "duration",
-        header: "Duration",
-        cell: (row) => <span>{row.durationMinutes} min</span>,
-        className: "w-[110px] text-right",
-        headerClassName: "text-right",
-      },
+  key: "duration",
+  header: "Duration",
+  cell: (row) => (
+  <span>
+    {row.timeLimit === null || row.timeLimit === undefined ? "Not set" : `${row.timeLimit} min`}
+  </span>
+),
+  className: "w-[110px] text-right",
+  headerClassName: "text-right",
+},
       {
         key: "actions",
         header: "Actions",
@@ -622,16 +639,32 @@ export function RecruiterAssessmentsView({
                   Manage
                 </Button>
               )}
-              <Button
+              {/* <Button
                 type="button"
                 variant="ghost"
                 size="sm"
                 className="text-destructive hover:text-destructive"
                 disabled={isActionPending || isArchived}
+                
                 onClick={() => setArchiveContext({ type: "single", assessment: row })}
               >
                 <Archive className="mr-1 h-4 w-4" /> Archive
-              </Button>
+              </Button> */}
+              <Button
+  type="button"
+  variant="ghost"
+  size="sm"
+  className="text-destructive hover:text-destructive"
+  disabled={isActionPending || isArchived}
+  onClick={() => {
+    setRowActionId(row.id)
+    archiveMutation.mutate({ ids: [row.id], source: "row", meta: { assessment: row } })
+  }}
+>
+  {isBusy ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <Archive className="mr-1 h-4 w-4" />}
+  Archive
+</Button>
+
               <div className="flex items-center gap-2">
                 {isBusy ? <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" /> : null}
                 <Switch
@@ -660,6 +693,8 @@ export function RecruiterAssessmentsView({
     toggleSelectPage,
   ])
 
+  // console.log(assessments);
+// console.log(data);
   return (
     <div className="grid gap-6">
       {isError ? (

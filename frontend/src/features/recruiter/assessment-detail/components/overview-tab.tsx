@@ -39,15 +39,16 @@ export function AssessmentOverviewTab({
         <CardContent className="grid gap-4 md:grid-cols-2">
           <div className="space-y-2">
             <h3 className="text-sm font-semibold text-muted-foreground">Status</h3>
-            <div className="flex items-center gap-2 text-sm">
-              <span>Currently</span>
-              <Badge variant={statusVariant}>{statusLabel}</Badge>
-            </div>
-            <p className="text-sm text-muted-foreground">
+            <div className=" text-sm">
+              {/* <span>Currently</span> */}
+              <Badge className="!pl-0" variant={statusVariant}>{statusLabel}</Badge>
+              <p className="text-xs text-muted-foreground">
               {assessment.isPublished
                 ? "Candidates with an invitation can access the live assessment."
                 : "Assessment remains hidden until you publish it."}
             </p>
+            </div>
+            
           </div>
           <div className="space-y-2">
             <h3 className="text-sm font-semibold text-muted-foreground">Instructions</h3>
@@ -86,7 +87,7 @@ export function AssessmentOverviewTab({
         </CardContent>
       </Card>
 
-      <Card>
+      {/* <Card>
         <CardHeader>
           <CardTitle>Question outline</CardTitle>
           <CardDescription>Ordered list of questions and scoring.</CardDescription>
@@ -99,7 +100,7 @@ export function AssessmentOverviewTab({
             emptyMessage="No questions linked yet. Add questions from the bank to begin."
           />
         </CardContent>
-      </Card>
+      </Card> */}
     </div>
   )
 }

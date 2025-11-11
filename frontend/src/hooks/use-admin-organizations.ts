@@ -1,7 +1,6 @@
 "use client"
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-
 import type { OrganizationRecord } from "@/lib/admin-data"
 import { apiRequest } from "@/lib/api-client"
 import { adminKeys } from "@/lib/query-keys"

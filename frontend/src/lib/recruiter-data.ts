@@ -4,8 +4,9 @@ export interface AssessmentSummary {
   type: "mcq" | "coding" | "mixed"
   status: "draft" | "published" | "archived"
   questions: number
-  durationMinutes: number
+  // durationMinutes: number
   lastUpdated: string
+  timeLimit: number
 }
 
 export interface InvitationSummary {

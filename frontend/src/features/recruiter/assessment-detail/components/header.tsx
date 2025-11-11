@@ -79,8 +79,8 @@ export function AssessmentHeader({
         <form className="flex-1 space-y-4" onSubmit={handleSubmit}>
           {isEditing ? (
             <div className="grid gap-4 md:grid-cols-2">
-              <FormField
-                control={form.control}
+              <FormField 
+              control={form.control}
                 name="title"
                 render={({ field }) => (
                   <FormItem className="space-y-2">

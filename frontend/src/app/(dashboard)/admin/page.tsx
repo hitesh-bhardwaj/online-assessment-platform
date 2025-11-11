@@ -51,7 +51,6 @@ export default function AdminDashboardPage() {
   const seatsUsed = organizationSummary?.seatsUsed ?? usage?.users ?? 0
   const seatLimit = organizationSummary?.seatLimit ?? usage?.subscription?.limits?.maxCandidatesPerMonth ?? 0
   const openAlerts = recentLogs.filter((log) => log.status !== "success").length
-
   return (
     <div className="grid gap-6">
       {/* ---- Platform snapshot (doesn't block if org API fails) ---- */}

@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from "next/server"
-
 import type { AssessmentSummary } from "@/lib/recruiter-data"
 import { getAuthCookies } from "@/lib/server/auth-cookies"
 import { backendRequest, BackendError } from "@/lib/server/backend-client"
@@ -11,11 +10,30 @@ import {
   type PaginatedResponse,
 } from "../helpers"
 
+
+
+// function toQueryParams(searchParams: URLSearchParams) {
+//   const params = new URLSearchParams(searchParams)
+//   if (!params.has("limit")) params.set("limit", "100")
+//   return params.toString()
+// }
 function toQueryParams(searchParams: URLSearchParams) {
   const params = new URLSearchParams(searchParams)
+
   if (!params.has("limit")) params.set("limit", "100")
+
+  const status = params.get("status")?.toLowerCase()
+  if (status === "published") {
+    params.delete("status")
+    params.set("isPublished", "true") 
+  } else if (status === "draft") {
+    params.delete("status")
+    params.set("isPublished", "false")
+  }
+
   return params.toString()
 }
+
 
 export async function GET(request: NextRequest) {
   const { accessToken } = await getAuthCookies()
@@ -23,6 +41,7 @@ export async function GET(request: NextRequest) {
   if (!accessToken) {
     return NextResponse.json({ success: false, message: "Not authenticated" }, { status: 401 })
   }
+  
 
   try {
     const searchParams = request.nextUrl.searchParams
