@@ -13,34 +13,39 @@ import { useAdminUsers } from "@/hooks/use-admin-users"
 import { cn } from "@/lib/utils"
 
 export default function AdminDashboardPage() {
+  // Organization
   const {
     data: organizationDetails,
     isLoading: organizationLoading,
     isError: organizationError,
     error: organizationErrorObject,
   } = useAdminOrganizations()
+
+  // Users
   const {
     data: adminUsersData,
+    isLoading: usersLoading,
     isError: usersError,
     error: usersErrorObject,
   } = useAdminUsers({ page: 1, limit: 20 })
+
+  // Logs
   const {
     data: logsData,
+    isLoading: logsLoading,
     isError: logsError,
     error: logsErrorObject,
   } = useAdminLogs({ page: 1, limit: 20 })
 
+  // Safely pick pieces (tolerant of missing sections)
   const organizationSummary = organizationDetails?.summary
   const usage = organizationDetails?.usage
   const organization = organizationDetails?.organization
 
   const users = adminUsersData?.items ?? []
-  const usersTotal = adminUsersData?.pagination.total ?? users.length
+  const usersTotal = adminUsersData?.pagination?.total ?? users.length
 
   const recentLogs = logsData?.items ?? []
-
-  const showSkeleton = organizationLoading && !organizationSummary
-  const showError = organizationError || usersError || logsError
 
   const activeAdmins = users.filter((user) => user.role === "admin" && user.status === "active").length
   const seatsUsed = organizationSummary?.seatsUsed ?? usage?.users ?? 0
@@ -49,130 +54,177 @@ export default function AdminDashboardPage() {
 
   return (
     <div className="grid gap-6">
-      {showError ? (
-        <Alert variant="destructive">
-          <AlertTitle>We couldn&apos;t load the most recent admin data</AlertTitle>
-          <AlertDescription>
-            {(organizationErrorObject as Error)?.message ||
-              (usersErrorObject as Error)?.message ||
-              (logsErrorObject as Error)?.message ||
-              "Please verify the admin API is reachable."}
-          </AlertDescription>
-        </Alert>
-      ) : null}
-
-      {showSkeleton ? (
-        <>
-          <Skeleton className="h-52" />
-          <Skeleton className="h-64" />
-        </>
-      ) : (
-        <>
-          <Card>
-            <CardHeader>
-              <CardTitle>Platform snapshot</CardTitle>
-              <CardDescription>
-                These metrics update automatically once the admin analytics endpoints respond.
-              </CardDescription>
-          </CardHeader>
-          <CardContent className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+      {/* ---- Platform snapshot (doesn't block if org API fails) ---- */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Platform snapshot</CardTitle>
+          <CardDescription>
+            These metrics update automatically once the admin analytics endpoints respond.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          {organizationLoading ? (
+            <>
+              <Skeleton className="h-20" />
+              <Skeleton className="h-20" />
+              <Skeleton className="h-20" />
+              <Skeleton className="h-20" />
+            </>
+          ) : (
+            <>
+              {organizationError ? (
+                <div className="md:col-span-4">
+                  <Alert variant="destructive">
+                    <AlertTitle>Organization data unavailable</AlertTitle>
+                    <AlertDescription>
+                      {(organizationErrorObject as Error)?.message || "Route not found"}
+                    </AlertDescription>
+                  </Alert>
+                </div>
+              ) : null}
               <Metric label="Team members" value={`${usersTotal}`} helper="Admins & recruiters" />
               <Metric label="Active admins" value={`${activeAdmins}`} helper="Licensed seats in use" />
               <Metric label="Seat consumption" value={`${seatsUsed}/${seatLimit || "∞"}`} helper="In-use vs available" />
               <Metric label="Open alerts" value={`${openAlerts}`} helper="Security & infrastructure" />
-          </CardContent>
-        </Card>
+            </>
+          )}
+        </CardContent>
+      </Card>
 
-          <Card>
-            <CardHeader>
-              <CardTitle>Branding quick edit</CardTitle>
-              <CardDescription>
-                Update tenant-level identity and compliance settings. Changes propagate to candidate emails and hosted pages.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="grid gap-4 md:grid-cols-2">
-              {organization && organizationSummary ? (
-                <>
-                  <Field label="Organization name">
-                    <Input defaultValue={organization.name} disabled />
-                  </Field>
-                  <Field label="Primary domain">
-                    <Input defaultValue={organization.domain as string} disabled />
-                  </Field>
-                  <Field label="Primary contact" className="md:col-span-2">
-                    <Input defaultValue={organization.contactEmail ?? ""} disabled />
-                  </Field>
-                  <Field label="Brand welcome message" className="md:col-span-2">
-                    <Textarea
-                      rows={4}
-                      placeholder="Welcome to Acme Talent. Please complete your assessment within 48 hours of receiving this invitation."
-                      disabled
-                    />
-                  </Field>
-                  <div className="flex flex-col gap-2">
-                    <span className="text-sm font-medium">Subscription</span>
-                    <div className="flex items-center gap-2">
-                      <Badge variant="secondary" className="capitalize">
-                        {organizationSummary.plan} plan
-                      </Badge>
-                      <span className="text-xs text-muted-foreground">
-                        {organizationSummary.seatsUsed}/{organizationSummary.seatLimit} seats used
-                      </span>
-                    </div>
-                  </div>
-                  <div className="flex flex-col gap-2">
-                    <span className="text-sm font-medium">Data retention</span>
-                    <div className="rounded-lg border border-border/70 bg-muted/40 px-4 py-3 text-sm text-muted-foreground">
-                      {organizationSummary.dataRetentionDays} days • GDPR
-                      {" "}
-                      {organizationSummary.gdprCompliant ? "enabled" : "not enabled"}
-                    </div>
-                  </div>
-                  <div className="md:col-span-2 flex justify-end gap-2">
-                    <Button variant="outline" size="sm" disabled>
-                      Cancel
-                    </Button>
-                    <Button size="sm" disabled>
-                      Save
-                    </Button>
-                  </div>
-                </>
-              ) : (
-                <p className="text-sm text-muted-foreground">
-                  No organization data available. Once the organizations API returns results, branding settings will render here.
-                </p>
-              )}
-            </CardContent>
-          </Card>
+      {/* ---- Branding quick edit (independent; shows inline alert if org API failed) ---- */}
+      {/* <Card>
+        <CardHeader>
+          <CardTitle>Branding quick edit</CardTitle>
+          <CardDescription>
+            Update tenant-level identity and compliance settings. Changes propagate to candidate emails and hosted pages.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="grid gap-4 md:grid-cols-2">
+          {organizationLoading ? (
+            <>
+              <Skeleton className="h-10" />
+              <Skeleton className="h-10" />
+              <Skeleton className="h-10 md:col-span-2" />
+              <Skeleton className="h-24 md:col-span-2" />
+            </>
+          ) : organizationError ? (
+            <Alert variant="destructive" className="md:col-span-2">
+              <AlertTitle>Organization API error</AlertTitle>
+              <AlertDescription>
+                {(organizationErrorObject as Error)?.message || "Route not found"}
+              </AlertDescription>
+            </Alert>
+          ) : organization && organizationSummary ? (
+            <>
+              <Field label="Organization name">
+                <Input defaultValue={organization.name} disabled />
+              </Field>
+              <Field label="Primary domain">
+                <Input defaultValue={(organization.domain as string) ?? ""} disabled />
+              </Field>
+              <Field label="Primary contact" className="md:col-span-2">
+                <Input defaultValue={organization.contactEmail ?? ""} disabled />
+              </Field>
+              <Field label="Brand welcome message" className="md:col-span-2">
+                <Textarea
+                  rows={4}
+                  placeholder="Welcome to Acme Talent. Please complete your assessment within 48 hours of receiving this invitation."
+                  disabled
+                />
+              </Field>
+              <div className="flex flex-col gap-2">
+                <span className="text-sm font-medium">Subscription</span>
+                <div className="flex items-center gap-2">
+                  <Badge variant="secondary" className="capitalize">
+                    {organizationSummary.plan} plan
+                  </Badge>
+                  <span className="text-xs text-muted-foreground">
+                    {organizationSummary.seatsUsed}/{organizationSummary.seatLimit} seats used
+                  </span>
+                </div>
+              </div>
+              <div className="flex flex-col gap-2">
+                <span className="text-sm font-medium">Data retention</span>
+                <div className="rounded-lg border border-border/70 bg-muted/40 px-4 py-3 text-sm text-muted-foreground">
+                  {organizationSummary.dataRetentionDays} days • GDPR{" "}
+                  {organizationSummary.gdprCompliant ? "enabled" : "not enabled"}
+                </div>
+              </div>
+              <div className="md:col-span-2 flex justify-end gap-2">
+                <Button variant="outline" size="sm" disabled>
+                  Cancel
+                </Button>
+                <Button size="sm" disabled>
+                  Save
+                </Button>
+              </div>
+            </>
+          ) : (
+            <p className="text-sm text-muted-foreground md:col-span-2">
+              No organization data available. Once the organizations API returns results, branding settings will render here.
+            </p>
+          )}
+        </CardContent>
+      </Card> */}
 
-          {recentLogs.length ? (
-            <Card>
-              <CardHeader>
-                <CardTitle>Recent activity</CardTitle>
-                <CardDescription>Latest administrative events pulled from the system log stream.</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                {recentLogs.slice(0, 5).map((log) => (
-                  <div key={log.id} className="flex flex-col gap-2 rounded-lg border border-border/60 bg-muted/30 px-3 py-2">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <Badge variant={log.status === "success" ? "secondary" : log.status === "warning" ? "outline" : "destructive"} className="uppercase">
-                        {log.status}
-                      </Badge>
-                      <span className="text-xs uppercase tracking-wide text-muted-foreground">{log.category}</span>
-                      <span className="text-xs text-muted-foreground">{new Date(log.timestamp).toLocaleString()}</span>
-                    </div>
-                    <div className="flex flex-col gap-1">
-                      <span className="text-sm font-medium text-foreground">{log.action}</span>
-                      <span className="text-xs text-muted-foreground">{log.metadata}</span>
-                    </div>
-                    <span className="text-xs text-muted-foreground">Actor: {log.actor}</span>
-                  </div>
-                ))}
-              </CardContent>
-            </Card>
-          ) : null}
-        </>
-      )}
+      {/* ---- Recent activity (independent; shows inline alert if logs API failed) ---- */}
+      {/* <Card>
+        <CardHeader>
+          <CardTitle>Recent activity</CardTitle>
+          <CardDescription>Latest administrative events pulled from the system log stream.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {logsLoading ? (
+            <>
+              <Skeleton className="h-16" />
+              <Skeleton className="h-16" />
+              <Skeleton className="h-16" />
+            </>
+          ) : logsError ? (
+            <Alert variant="destructive">
+              <AlertTitle>Logs API error</AlertTitle>
+              <AlertDescription>
+                {(logsErrorObject as Error)?.message || "Route not found"}
+              </AlertDescription>
+            </Alert>
+          ) : recentLogs.length ? (
+            recentLogs.slice(0, 5).map((log) => (
+              <div
+                key={log.id}
+                className="flex flex-col gap-2 rounded-lg border border-border/60 bg-muted/30 px-3 py-2"
+              >
+                <div className="flex flex-wrap items-center gap-2">
+                  <Badge
+                    variant={
+                      log.status === "success"
+                        ? "secondary"
+                        : log.status === "warning"
+                        ? "outline"
+                        : "destructive"
+                    }
+                    className="uppercase"
+                  >
+                    {log.status}
+                  </Badge>
+                  <span className="text-xs uppercase tracking-wide text-muted-foreground">{log.category}</span>
+                  <span className="text-xs text-muted-foreground">
+                    {log.timestamp ? new Date(log.timestamp).toLocaleString() : ""}
+                  </span>
+                </div>
+                <div className="flex flex-col gap-1">
+                  <span className="text-sm font-medium text-foreground">{log.action}</span>
+                  <span className="text-xs text-muted-foreground">
+                    {typeof log.metadata === "string" ? log.metadata : JSON.stringify(log.metadata)}
+                  </span>
+                </div>
+                <span className="text-xs text-muted-foreground">Actor: {log.actor}</span>
+              </div>
+            ))
+          ) : (
+            <p className="text-sm text-muted-foreground">No recent activity.</p>
+          )}
+        </CardContent>
+      </Card> */}
     </div>
   )
 }

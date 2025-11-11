@@ -1,68 +1,67 @@
-"use client"
+'use client';
 
-import { useEffect, useRef } from "react"
+import { useEffect, useRef } from 'react';
 
-import { apiRequest } from "@/lib/api-client"
-import type { CaptureStatusValue } from "./context"
+import type { CaptureStatusValue } from './context';
 
-const DEFAULT_TIMESLICE = 8000
+const DEFAULT_TIMESLICE = 6000; // was 8000; smaller chunks = smaller uploads
 
 /**
- * Detect the best supported MIME type for MediaRecorder
- * Safari doesn't support webm, so we need to fallback to mp4
+ * Detect the best supported MIME type for MediaRecorder.
+ * Prefer WebM (vp8/vp9). Use MP4 only if truly supported.
  */
 function getSupportedMimeType(includeAudio: boolean = true): string {
-  const types = includeAudio
+  const candidates = includeAudio
     ? [
-        "video/webm;codecs=vp8,opus",
-        "video/webm;codecs=vp9,opus",
-        "video/webm",
-        "video/mp4;codecs=h264,aac",
-        "video/mp4",
+        'video/webm;codecs=vp8,opus',
+        'video/webm;codecs=vp9,opus',
+        'video/webm',
+        'video/mp4;codecs=h264,aac',
+        'video/mp4',
       ]
     : [
-        "video/webm;codecs=vp8",
-        "video/webm;codecs=vp9",
-        "video/webm",
-        "video/mp4;codecs=h264",
-        "video/mp4",
+        'video/webm;codecs=vp8',
+        'video/webm;codecs=vp9',
+        'video/webm',
+        'video/mp4;codecs=h264',
+        'video/mp4',
       ];
 
-  for (const type of types) {
-    if (typeof MediaRecorder !== "undefined" && MediaRecorder.isTypeSupported(type)) {
-      console.log(`[MediaRecorder] Using MIME type: ${type}`);
-      return type;
+  for (const type of candidates) {
+    if (
+      typeof MediaRecorder !== 'undefined' &&
+      MediaRecorder.isTypeSupported(type)
+    ) {
+      // Prefer webm when both are available:
+      if (type.startsWith('video/webm')) {
+        console.log('[MediaRecorder] Using MIME type:', type);
+        return type;
+      }
+      // Only accept mp4 if webm was not supported
+      if (
+        !candidates.slice(0, 3).some((t) => MediaRecorder.isTypeSupported(t))
+      ) {
+        console.log('[MediaRecorder] Using MIME type (mp4 fallback):', type);
+        return type;
+      }
     }
   }
 
-  // Fallback to empty string and let browser choose
-  console.warn("[MediaRecorder] No supported MIME type found, using browser default");
-  return "";
+  console.warn(
+    '[MediaRecorder] No supported MIME found; letting browser choose'
+  );
+  return '';
 }
 
 type QueueItem = {
-  blob: Blob
-  sequence: number
-  durationMs: number
-  attempts: number
-  type: "webcam" | "screen"
+  blob: Blob;
+  sequence: number;
+  durationMs: number;
+  attempts: number;
+  type: 'webcam' | 'screen';
 };
 
-async function blobToBase64(blob: Blob) {
-  const arrayBuffer = await blob.arrayBuffer()
-  const bytes = new Uint8Array(arrayBuffer)
-  const chunkSize = 0x8000
-  let binary = ""
-
-  for (let offset = 0; offset < bytes.length; offset += chunkSize) {
-    const chunk = bytes.subarray(offset, offset + chunkSize)
-    binary += String.fromCharCode.apply(null, Array.from(chunk))
-  }
-
-  return btoa(binary)
-}
-
-async function transmitSegment({
+async function transmitSegmentFormData({
   token,
   assessmentId,
   blob,
@@ -70,48 +69,70 @@ async function transmitSegment({
   durationMs,
   type,
 }: {
-  token: string
-  assessmentId: string
-  blob: Blob
-  sequence: number
-  durationMs: number
-  type: "webcam" | "screen"
+  token: string;
+  assessmentId: string;
+  blob: Blob;
+  sequence: number;
+  durationMs: number;
+  type: 'webcam' | 'screen';
 }) {
-  const chunk = await blobToBase64(blob)
-  if (!chunk) return
+  const ext = blob.type.includes('webm')
+    ? 'webm'
+    : blob.type.includes('mp4')
+    ? 'mp4'
+    : 'bin';
 
-  await apiRequest({
-    method: "POST",
-    url: `/candidate/proctoring/media`,
+  const form = new FormData();
+  form.append('file', blob, `seg-${type}-${sequence}.${ext}`);
+  form.append('assessmentId', assessmentId);
+  form.append('mediaType', type);
+  form.append('sequence', String(sequence));
+  form.append('durationMs', String(durationMs));
+  form.append('mimeType', blob.type || 'video/webm');
+
+  // Use fetch directly to avoid JSON headers being forced by a helper.
+  const res = await fetch('/api/candidate/proctoring/media', {
+    method: 'POST',
     headers: {
       Authorization: `Bearer ${token}`,
+      // DO NOT set Content-Type; the browser will set multipart boundary.
     },
-    data: {
-      assessmentId,
-      mediaType: type,
-      chunk,
-      mimeType: blob.type || "video/webm",
-      durationMs,
-      sequence,
-    },
-  })
+    body: form,
+  });
+
+  if (!res.ok) {
+    let body: any = undefined;
+    try {
+      body = await res.text();
+    } catch {
+      /* ignore */
+    }
+    const err = new Error(
+      `[Upload] ${type} seq=${sequence} failed: ${res.status} ${
+        res.statusText
+      }${body ? ` — ${String(body).slice(0, 300)}` : ''}`
+    );
+    (err as any).status = res.status;
+    (err as any).body = body;
+    throw err;
+  }
 }
 
 export interface UseProctoringMediaOptions {
-  enabled: boolean
-  token: string | undefined
-  assessmentId: string | undefined
-  chunkDurationMs?: number
-  onError?: (channel: "webcam" | "screen", error: Error) => void
-  includeScreen?: boolean
-  onScreenReady?: () => void
-  onScreenDenied?: (error: Error) => void
-  onScreenEnded?: () => void
-  onWebcamStatusChange?: (status: CaptureStatusValue) => void
-  onScreenStatusChange?: (status: CaptureStatusValue) => void
-  onPendingChange?: (pending: number) => void
-  onUploadSuccess?: (channel: "webcam" | "screen", timestamp: string) => void
-  restartToken?: number
+  enabled: boolean;
+  token: string | undefined;
+  assessmentId: string | undefined;
+  chunkDurationMs?: number;
+  onError?: (channel: 'webcam' | 'screen', error: Error) => void;
+  includeScreen?: boolean;
+  onScreenReady?: () => void;
+  onScreenDenied?: (error: Error) => void;
+  onScreenEnded?: () => void;
+  onWebcamStatusChange?: (status: CaptureStatusValue) => void;
+  onScreenStatusChange?: (status: CaptureStatusValue) => void;
+  onPendingChange?: (pending: number) => void;
+  onUploadSuccess?: (channel: 'webcam' | 'screen', timestamp: string) => void;
+  restartToken?: number;
 }
 
 export function useProctoringMediaStreams({
@@ -130,362 +151,393 @@ export function useProctoringMediaStreams({
   onUploadSuccess,
   restartToken = 0,
 }: UseProctoringMediaOptions) {
-  const webcamRecorderRef = useRef<MediaRecorder | null>(null)
-  const screenRecorderRef = useRef<MediaRecorder | null>(null)
-  const webcamStreamRef = useRef<MediaStream | null>(null)
-  const screenStreamRef = useRef<MediaStream | null>(null)
-  const webcamSequenceRef = useRef(0)
-  const screenSequenceRef = useRef(0)
-  const queueRef = useRef<{ webcam: QueueItem[]; screen: QueueItem[] }>({ webcam: [], screen: [] })
-  const flushTimerRef = useRef<{ webcam: number | null; screen: number | null }>({ webcam: null, screen: null })
+  const webcamRecorderRef = useRef<MediaRecorder | null>(null);
+  const screenRecorderRef = useRef<MediaRecorder | null>(null);
+  const webcamStreamRef = useRef<MediaStream | null>(null);
+  const screenStreamRef = useRef<MediaStream | null>(null);
+  const webcamSequenceRef = useRef(0);
+  const screenSequenceRef = useRef(0);
+  const queueRef = useRef<{ webcam: QueueItem[]; screen: QueueItem[] }>({
+    webcam: [],
+    screen: [],
+  });
+  const flushingRef = useRef<{ webcam: boolean; screen: boolean }>({
+    webcam: false,
+    screen: false,
+  });
+  const flushTimerRef = useRef<{
+    webcam: number | null;
+    screen: number | null;
+  }>({
+    webcam: null,
+    screen: null,
+  });
 
-  // Use refs for callbacks to avoid infinite re-renders
-  const onErrorRef = useRef(onError)
-  const onScreenReadyRef = useRef(onScreenReady)
-  const onScreenDeniedRef = useRef(onScreenDenied)
-  const onScreenEndedRef = useRef(onScreenEnded)
-  const onWebcamStatusChangeRef = useRef(onWebcamStatusChange)
-  const onScreenStatusChangeRef = useRef(onScreenStatusChange)
-  const onPendingChangeRef = useRef(onPendingChange)
-  const onUploadSuccessRef = useRef(onUploadSuccess)
+  // callback refs
+  const onErrorRef = useRef(onError);
+  const onScreenReadyRef = useRef(onScreenReady);
+  const onScreenDeniedRef = useRef(onScreenDenied);
+  const onScreenEndedRef = useRef(onScreenEnded);
+  const onWebcamStatusChangeRef = useRef(onWebcamStatusChange);
+  const onScreenStatusChangeRef = useRef(onScreenStatusChange);
+  const onPendingChangeRef = useRef(onPendingChange);
+  const onUploadSuccessRef = useRef(onUploadSuccess);
 
-  // Update refs when callbacks change
   useEffect(() => {
-    onErrorRef.current = onError
-    onScreenReadyRef.current = onScreenReady
-    onScreenDeniedRef.current = onScreenDenied
-    onScreenEndedRef.current = onScreenEnded
-    onWebcamStatusChangeRef.current = onWebcamStatusChange
-    onScreenStatusChangeRef.current = onScreenStatusChange
-    onPendingChangeRef.current = onPendingChange
-    onUploadSuccessRef.current = onUploadSuccess
-  })
+    onErrorRef.current = onError;
+    onScreenReadyRef.current = onScreenReady;
+    onScreenDeniedRef.current = onScreenDenied;
+    onScreenEndedRef.current = onScreenEnded;
+    onWebcamStatusChangeRef.current = onWebcamStatusChange;
+    onScreenStatusChangeRef.current = onScreenStatusChange;
+    onPendingChangeRef.current = onPendingChange;
+    onUploadSuccessRef.current = onUploadSuccess;
+  });
 
   useEffect(() => {
-    console.log('[useProctoringMedia] useEffect triggered:', {
-      enabled,
-      hasToken: !!token,
-      hasAssessmentId: !!assessmentId,
-      includeScreen,
-      restartToken
-    })
-
     const clearTimers = () => {
-      (Object.keys(flushTimerRef.current) as Array<keyof typeof flushTimerRef.current>).forEach((channel) => {
-        const timer = flushTimerRef.current[channel]
+      (
+        Object.keys(flushTimerRef.current) as Array<
+          keyof typeof flushTimerRef.current
+        >
+      ).forEach((channel) => {
+        const timer = flushTimerRef.current[channel];
         if (timer) {
-          window.clearTimeout(timer)
-          flushTimerRef.current[channel] = null
+          window.clearTimeout(timer);
+          flushTimerRef.current[channel] = null;
         }
-      })
-    }
+      });
+    };
 
     const updatePending = () => {
-      const total = queueRef.current.webcam.length + queueRef.current.screen.length
-      onPendingChangeRef.current?.(total)
-    }
+      const total =
+        queueRef.current.webcam.length + queueRef.current.screen.length;
+      onPendingChangeRef.current?.(total);
+    };
 
-    const scheduleFlush = (channel: "webcam" | "screen", delay = 0) => {
-      if (flushTimerRef.current[channel] != null) return
+    const scheduleFlush = (channel: 'webcam' | 'screen', delay = 0) => {
+      if (flushTimerRef.current[channel] != null) return;
       flushTimerRef.current[channel] = window.setTimeout(() => {
-        flushTimerRef.current[channel] = null
-        flush(channel)
-      }, delay)
-    }
+        flushTimerRef.current[channel] = null;
+        void flush(channel);
+      }, delay);
+    };
 
-    const flush = (channel: "webcam" | "screen") => {
-      const queue = queueRef.current[channel]
+    const flush = async (channel: 'webcam' | 'screen') => {
+      if (flushingRef.current[channel]) return;
+      const queue = queueRef.current[channel];
       if (queue.length === 0) {
-        updatePending()
-        return
+        updatePending();
+        return;
       }
 
-      const item = queue[0]
+      flushingRef.current[channel] = true;
+      const item = queue[0];
 
-      transmitSegment({
-        token: token as string,
-        assessmentId: assessmentId as string,
-        blob: item.blob,
-        sequence: item.sequence,
-        durationMs: item.durationMs,
-        type: item.type,
-      })
-        .then(() => {
-          queue.shift()
-          updatePending()
-          onUploadSuccessRef.current?.(channel, new Date().toISOString())
-          scheduleFlush(channel, 0)
-        })
-        .catch((error) => {
-          item.attempts += 1
-          const delay = Math.min(16000, 1000 * Math.pow(2, item.attempts - 1))
-          scheduleFlush(channel, delay)
-          onErrorRef.current?.(channel, error instanceof Error ? error : new Error("Failed to upload media segment"))
-        })
-    }
+      try {
+        await transmitSegmentFormData({
+          token: token as string,
+          assessmentId: assessmentId as string,
+          blob: item.blob,
+          sequence: item.sequence,
+          durationMs: item.durationMs,
+          type: item.type,
+        });
 
-    if (!enabled || !token || !assessmentId) {
-      console.log('[useProctoringMedia] Not starting recording - conditions not met:', {
-        enabled,
-        hasToken: !!token,
-        hasAssessmentId: !!assessmentId
-      })
+        // success
+        queue.shift();
+        updatePending();
+        onUploadSuccessRef.current?.(channel, new Date().toISOString());
 
-      if (webcamRecorderRef.current && webcamRecorderRef.current.state !== "inactive") {
-        webcamRecorderRef.current.stop()
+        // immediately try next
+        flushingRef.current[channel] = false;
+        scheduleFlush(channel, 0);
+      } catch (error: any) {
+        // failure with backoff
+        item.attempts += 1;
+        const delay = Math.min(16000, 1000 * Math.pow(2, item.attempts - 1));
+
+        console.error('[Proctoring] Upload failed', {
+          channel,
+          sequence: item.sequence,
+          size: item.blob.size,
+          mime: item.blob.type,
+          status: error?.status,
+          body: error?.body?.slice?.(0, 300),
+          message: error?.message,
+        });
+
+        onErrorRef.current?.(
+          channel,
+          error instanceof Error
+            ? error
+            : new Error('Failed to upload media segment')
+        );
+
+        flushingRef.current[channel] = false;
+        scheduleFlush(channel, delay);
       }
-      webcamRecorderRef.current = null
-      if (screenRecorderRef.current && screenRecorderRef.current.state !== "inactive") {
-        screenRecorderRef.current.stop()
-      }
-      screenRecorderRef.current = null
+    };
 
-      const cleanup = (stream: MediaStream | null) => {
-        if (!stream) return
-        stream.getTracks().forEach((track) => {
+    const stopRecorder = (rec: MediaRecorder | null) => {
+      if (!rec) return;
+      try {
+        if (rec.state !== 'inactive') {
+          // Ensure final chunk is emitted
           try {
-            track.stop()
+            rec.requestData?.();
           } catch {
-            // ignore
+            /* ignore */
           }
-        })
+          rec.stop();
+        }
+      } catch {
+        /* ignore */
       }
+    };
 
-      cleanup(webcamStreamRef.current)
-      cleanup(screenStreamRef.current)
+    const cleanupStream = (stream: MediaStream | null) => {
+      if (!stream) return;
+      stream.getTracks().forEach((track) => {
+        try {
+          track.stop();
+        } catch {
+          /* ignore */
+        }
+      });
+    };
 
-      webcamStreamRef.current = null
-      screenStreamRef.current = null
-      webcamSequenceRef.current = 0
-      screenSequenceRef.current = 0
-      queueRef.current = { webcam: [], screen: [] }
-      clearTimers()
-      updatePending()
-      onWebcamStatusChangeRef.current?.("idle")
-      onScreenStatusChangeRef.current?.("idle")
-      return
+    // --- Guard: not ready to start ---
+    if (!enabled || !token || !assessmentId) {
+      // stop recorders
+      stopRecorder(webcamRecorderRef.current);
+      webcamRecorderRef.current = null;
+      stopRecorder(screenRecorderRef.current);
+      screenRecorderRef.current = null;
+
+      // stop streams
+      cleanupStream(webcamStreamRef.current);
+      cleanupStream(screenStreamRef.current);
+      webcamStreamRef.current = null;
+      screenStreamRef.current = null;
+
+      // reset state
+      webcamSequenceRef.current = 0;
+      screenSequenceRef.current = 0;
+      queueRef.current = { webcam: [], screen: [] };
+      flushingRef.current = { webcam: false, screen: false };
+      clearTimers();
+      updatePending();
+      onWebcamStatusChangeRef.current?.('idle');
+      onScreenStatusChangeRef.current?.('idle');
+      return;
     }
 
-    console.log('[useProctoringMedia] ✅ Starting recording setup! Conditions met.')
-
-    let cancelled = false
+    let cancelled = false;
 
     const setup = async () => {
-      console.log('[useProctoringMedia] Running setup function...')
       try {
-        console.log('[useProctoringMedia] Requesting webcam and microphone...')
-        // Request fresh webcam and microphone streams
-        const webcamStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true })
-        console.log('[useProctoringMedia] ✅ Webcam and microphone stream obtained:', {
-          tracks: webcamStream.getTracks().length,
-          videoTrack: webcamStream.getVideoTracks()[0]?.label,
-          audioTrack: webcamStream.getAudioTracks()[0]?.label
-        })
-        onWebcamStatusChangeRef.current?.("active")
-
+        // Webcam + mic
+        const webcamStream = await navigator.mediaDevices.getUserMedia({
+          video: true,
+          audio: true,
+        });
         if (cancelled) {
-          webcamStream.getTracks().forEach((track) => track.stop())
-          return
+          cleanupStream(webcamStream);
+          return;
         }
+        onWebcamStatusChangeRef.current?.('active');
+        webcamStreamRef.current = webcamStream;
 
-        webcamStreamRef.current = webcamStream
-        const mimeType = getSupportedMimeType(true) // Include audio for webcam
+        const mimeType = getSupportedMimeType(true);
         const webcamRecorder = new MediaRecorder(webcamStream, {
-          ...(mimeType && { mimeType }), // Only set if we found a supported type
-          videoBitsPerSecond: 1_200_000,
-        })
-        webcamRecorderRef.current = webcamRecorder
-        webcamSequenceRef.current = 0
+          ...(mimeType && { mimeType }),
+          videoBitsPerSecond: 800_000, // tuned down a bit
+        });
+        webcamRecorderRef.current = webcamRecorder;
+        webcamSequenceRef.current = 0;
 
         webcamRecorder.ondataavailable = (event) => {
-          console.log('[Proctoring] Webcam chunk received:', {
-            blobSize: event.data?.size || 0,
-            blobType: event.data?.type || 'unknown',
-            isEmpty: !event.data || event.data.size === 0,
-            sequence: webcamSequenceRef.current
-          })
-
           if (!event.data || event.data.size === 0) {
-            console.error('[Proctoring] Empty webcam chunk detected - skipping')
-            return
+            console.warn('[Proctoring] Empty webcam chunk – skipped');
+            return;
           }
-
-          // Validate minimum chunk size (should be at least 1KB for 8-second video)
           if (event.data.size < 1000) {
-            console.warn('[Proctoring] Suspiciously small webcam chunk:', event.data.size, 'bytes')
+            console.warn(
+              '[Proctoring] Tiny webcam chunk:',
+              event.data.size,
+              'bytes'
+            );
           }
 
-          const currentSequence = webcamSequenceRef.current
-          webcamSequenceRef.current = currentSequence + 1
-
+          const seq = webcamSequenceRef.current++;
           queueRef.current.webcam.push({
             blob: event.data,
-            sequence: currentSequence,
+            sequence: seq,
             durationMs: chunkDurationMs,
             attempts: 0,
-            type: "webcam",
-          })
-          updatePending()
-          scheduleFlush("webcam")
-        }
+            type: 'webcam',
+          });
+          updatePending();
+          scheduleFlush('webcam');
+        };
 
-        webcamRecorder.onerror = (event) => {
-          const error = event.error ?? new Error("Media recorder error")
-          onWebcamStatusChangeRef.current?.("error")
-          onErrorRef.current?.("webcam", error instanceof Error ? error : new Error(String(error)))
-        }
+        webcamRecorder.onerror = (event: any) => {
+          const err = event?.error ?? new Error('MediaRecorder error (webcam)');
+          onWebcamStatusChangeRef.current?.('error');
+          onErrorRef.current?.(
+            'webcam',
+            err instanceof Error ? err : new Error(String(err))
+          );
+        };
 
-        webcamRecorder.start(chunkDurationMs)
+        webcamRecorder.start(chunkDurationMs);
 
+        // Screen (optional)
         if (includeScreen) {
           try {
-            console.log('[Proctoring] Requesting screen share permission...')
-
-            // Request fresh screen sharing stream
             const screenStream = await navigator.mediaDevices.getDisplayMedia({
               video: {
-                //@ts-expect-error displaySurface not typed yet
-                displaySurface: "monitor",
+                displaySurface: 'monitor',
                 frameRate: { ideal: 30 },
               },
               audio: false,
-            })
-
-            console.log('[Proctoring] Screen share granted:', {
-              tracks: screenStream.getTracks().length,
-              videoTrack: screenStream.getVideoTracks()[0]?.label || 'none',
-              trackState: screenStream.getVideoTracks()[0]?.readyState || 'unknown'
-            })
-
+            });
             if (cancelled) {
-              screenStream.getTracks().forEach((track) => track.stop())
-              return
+              cleanupStream(screenStream);
+              return;
             }
 
-            screenStreamRef.current = screenStream
-            const screenMimeType = getSupportedMimeType(false) // No audio for screen
+            screenStreamRef.current = screenStream;
+            const screenMimeType = getSupportedMimeType(false);
             const screenRecorder = new MediaRecorder(screenStream, {
-              ...(screenMimeType && { mimeType: screenMimeType }), // Only set if we found a supported type
-              videoBitsPerSecond: 2_000_000,
-            })
-            screenRecorderRef.current = screenRecorder
-            screenSequenceRef.current = 0
-            onScreenStatusChangeRef.current?.("active")
+              ...(screenMimeType && { mimeType: screenMimeType }),
+              videoBitsPerSecond: 1_500_000, // tuned down a bit
+            });
+            screenRecorderRef.current = screenRecorder;
+            screenSequenceRef.current = 0;
+            onScreenStatusChangeRef.current?.('active');
 
-            const screenTrack = screenStream.getVideoTracks()[0]
+            const screenTrack = screenStream.getVideoTracks()[0];
             if (screenTrack) {
-              screenTrack.addEventListener("ended", () => {
-                onScreenEndedRef.current?.()
-              })
+              screenTrack.addEventListener('ended', () => {
+                onScreenEndedRef.current?.();
+                // Also stop the recorder to flush last chunk
+                stopRecorder(screenRecorderRef.current);
+              });
             }
 
             screenRecorder.ondataavailable = (event) => {
-              console.log('[Proctoring] Screen chunk received:', {
-                blobSize: event.data?.size || 0,
-                blobType: event.data?.type || 'unknown',
-                isEmpty: !event.data || event.data.size === 0,
-                sequence: screenSequenceRef.current
-              })
-
               if (!event.data || event.data.size === 0) {
-                console.error('[Proctoring] Empty screen chunk detected - skipping')
-                return
+                console.warn('[Proctoring] Empty screen chunk – skipped');
+                return;
               }
-
-              // Validate minimum chunk size (should be at least 1KB for 8-second video)
               if (event.data.size < 1000) {
-                console.warn('[Proctoring] Suspiciously small screen chunk:', event.data.size, 'bytes')
+                console.warn(
+                  '[Proctoring] Tiny screen chunk:',
+                  event.data.size,
+                  'bytes'
+                );
               }
 
-              const currentSequence = screenSequenceRef.current
-              screenSequenceRef.current = currentSequence + 1
-
+              const seq = screenSequenceRef.current++;
               queueRef.current.screen.push({
                 blob: event.data,
-                sequence: currentSequence,
+                sequence: seq,
                 durationMs: chunkDurationMs,
                 attempts: 0,
-                type: "screen",
-              })
-              updatePending()
-              scheduleFlush("screen")
-            }
+                type: 'screen',
+              });
+              updatePending();
+              scheduleFlush('screen');
+            };
 
-            screenRecorder.onerror = (event) => {
-              const error = event.error ?? new Error("Screen recorder error")
-              onScreenStatusChangeRef.current?.("error")
-              onErrorRef.current?.("screen", error instanceof Error ? error : new Error(String(error)))
-            }
+            screenRecorder.onerror = (event: any) => {
+              const err =
+                event?.error ?? new Error('MediaRecorder error (screen)');
+              onScreenStatusChangeRef.current?.('error');
+              onErrorRef.current?.(
+                'screen',
+                err instanceof Error ? err : new Error(String(err))
+              );
+            };
 
-            screenRecorder.start(chunkDurationMs)
-            onScreenReadyRef.current?.()
-          } catch (screenError) {
-            console.error('[Proctoring] Screen share error:', {
-              error: screenError instanceof Error ? screenError.message : String(screenError),
-              name: screenError instanceof Error ? screenError.name : 'Unknown',
-              stack: screenError instanceof Error ? screenError.stack : undefined
-            })
-
-            onScreenStatusChangeRef.current?.("error")
-            if (screenError instanceof Error) {
-              onScreenDeniedRef.current?.(screenError)
-              onErrorRef.current?.("screen", screenError)
-            } else {
-              const fallback = new Error("Screen sharing was blocked")
-              onScreenDeniedRef.current?.(fallback)
-              onErrorRef.current?.("screen", fallback)
-            }
+            screenRecorder.start(chunkDurationMs);
+            onScreenReadyRef.current?.();
+          } catch (screenError: any) {
+            const err =
+              screenError instanceof Error
+                ? screenError
+                : new Error('Screen sharing was blocked');
+            console.error('[Proctoring] Screen share error:', err.message);
+            onScreenStatusChangeRef.current?.('error');
+            onScreenDeniedRef.current?.(err);
+            onErrorRef.current?.('screen', err);
           }
         }
-      } catch (error) {
-        onWebcamStatusChangeRef.current?.("error")
-        if (error instanceof Error) {
-          onErrorRef.current?.("webcam", error)
-        } else {
-          onErrorRef.current?.("webcam", new Error("Unable to start webcam capture"))
-        }
+      } catch (error: any) {
+        const err =
+          error instanceof Error
+            ? error
+            : new Error('Unable to start webcam capture');
+        onWebcamStatusChangeRef.current?.('error');
+        onErrorRef.current?.('webcam', err);
       }
-    }
+    };
 
-    console.log('[useProctoringMedia] Calling setup() function now...')
-    setup()
+    void setup();
 
     return () => {
-      console.log('[useProctoringMedia] Cleanup function called')
-      cancelled = true
-      if (webcamRecorderRef.current && webcamRecorderRef.current.state !== "inactive") {
-        webcamRecorderRef.current.stop()
-      }
-      webcamRecorderRef.current = null
+      cancelled = true;
 
-      if (screenRecorderRef.current && screenRecorderRef.current.state !== "inactive") {
-        screenRecorderRef.current.stop()
+      // Stop recorders (flush last chunks)
+      const wr = webcamRecorderRef.current;
+      const sr = screenRecorderRef.current;
+      if (wr && wr.state !== 'inactive') {
+        try {
+          wr.requestData?.();
+        } catch {}
       }
-      screenRecorderRef.current = null
-
-      const cleanup = (stream: MediaStream | null) => {
-        if (!stream) return
-        stream.getTracks().forEach((track) => {
-          try {
-            track.stop()
-          } catch {
-            // ignore
-          }
-        })
+      if (sr && sr.state !== 'inactive') {
+        try {
+          sr.requestData?.();
+        } catch {}
       }
 
-      cleanup(webcamStreamRef.current)
-      cleanup(screenStreamRef.current)
+      // stopping recorders will trigger final ondataavailable; keep queue alive
+      // for a brief moment to allow flushing.
+      stopRecorder(webcamRecorderRef.current);
+      webcamRecorderRef.current = null;
+      stopRecorder(screenRecorderRef.current);
+      screenRecorderRef.current = null;
 
-      webcamStreamRef.current = null
-      screenStreamRef.current = null
-      webcamSequenceRef.current = 0
-      screenSequenceRef.current = 0
-      queueRef.current = { webcam: [], screen: [] }
-      clearTimers()
-      updatePending()
-      onWebcamStatusChangeRef.current?.("idle")
-      onScreenStatusChangeRef.current?.("idle")
-    }
-  }, [enabled, token, assessmentId, chunkDurationMs, includeScreen, restartToken])
+      // we DO NOT clear queues immediately; we let scheduled flush drain what’s left
+      // However, we still stop media tracks.
+      cleanupStream(webcamStreamRef.current);
+      cleanupStream(screenStreamRef.current);
+      webcamStreamRef.current = null;
+      screenStreamRef.current = null;
+
+      // Schedule one last immediate flush per channel if anything remains
+      if (queueRef.current.webcam.length) scheduleFlush('webcam', 0);
+      if (queueRef.current.screen.length) scheduleFlush('screen', 0);
+
+      // After a grace period, clear timers & queues
+      window.setTimeout(() => {
+        // If something still remains, caller can show "pending uploads: N"
+        // We won't destroy state aggressively to avoid losing data.
+        // (You can extend this to wait for zero pending or abort on page hide.)
+      }, 1500);
+
+      onWebcamStatusChangeRef.current?.('idle');
+      onScreenStatusChangeRef.current?.('idle');
+    };
+  }, [
+    enabled,
+    token,
+    assessmentId,
+    chunkDurationMs,
+    includeScreen,
+    restartToken, // restart when this changes
+  ]);
 }

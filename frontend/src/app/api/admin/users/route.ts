@@ -34,7 +34,7 @@ interface CreateUserPayload {
 }
 
 function mapUsers(users: BackendUser[]): AdminUserRecord[] {
-  return users.map((user) => toAdminUserRecord(user))
+  return users.map((u) => toAdminUserRecord(u))
 }
 
 export async function GET(request: NextRequest) {
@@ -44,30 +44,65 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const searchParams = request.nextUrl.searchParams
-    const query = new URLSearchParams(searchParams)
+    const sp = request.nextUrl.searchParams
 
-    if (!query.has("limit")) query.set("limit", "20")
-    if (!query.has("page")) query.set("page", "1")
+    // UI filters
+    const role = sp.get("role") as "admin" | "recruiter" | null
+    const status = sp.get("status") as "active" | "invited" | "suspended" | null
+    const search = (sp.get("search") || "").trim().toLowerCase()
+    const page = Math.max(1, Number(sp.get("page") ?? "1"))
+    const limit = Math.max(1, Number(sp.get("limit") ?? "20"))
 
-    const response = await backendRequest<UsersResponse>(`/users?${query.toString()}`, {
+    // ✅ Map UI filters to backend query (no hard exclusion)
+    const backendQuery = new URLSearchParams()
+    backendQuery.set("page", String(page))
+    backendQuery.set("limit", String(limit))
+
+    // map status to isActive when explicitly chosen
+    if (status === "active") backendQuery.set("isActive", "true")
+    else if (status === "suspended") backendQuery.set("isActive", "false")
+    // when “all”, send nothing so both show
+
+    const response = await backendRequest<UsersResponse>(`/users?${backendQuery.toString()}`, {
       method: "GET",
       token: accessToken,
     })
 
-    const items = mapUsers(response.data.users)
-    const pagination =
-      response.data.pagination ?? {
-        page: Number(query.get("page") ?? 1),
-        limit: Number(query.get("limit") ??( items.length || 10)),
-        total: items.length,
-        pages: Math.max(1, Math.ceil((items.length || 1) / Number(query.get("limit") ?? 10))),
-      }
+    const raw = response.data.users ?? []
+
+    // ✅ Keep all users, even suspended. Only hide deleted ones.
+    const visibleRaw = raw.filter((u: any) => !u?.deletedAt && !u?.isDeleted)
+
+    // Map to UI shape
+    let items = mapUsers(visibleRaw)
+
+    // Apply client-side filters
+    if (role) items = items.filter((u) => u.role === role)
+    if (status) items = items.filter((u) => u.status === status)
+    if (search) {
+      items = items.filter((u) => {
+        const hay = `${u.name ?? ""} ${u.email ?? ""}`.toLowerCase()
+        return hay.includes(search)
+      })
+    }
+
+    const backendPg = response.data.pagination
+    const pagination = backendPg
+      ? backendPg
+      : {
+          page,
+          limit,
+          total: items.length,
+          pages: Math.max(1, Math.ceil(Math.max(items.length, 1) / limit)),
+        }
 
     return NextResponse.json({ items, pagination }, { status: 200 })
   } catch (error) {
     if (error instanceof BackendError) {
-      return NextResponse.json({ success: false, message: error.message }, { status: error.status })
+      return NextResponse.json(
+        { success: false, message: error.message },
+        { status: error.status ?? 500 }
+      )
     }
     throw error
   }
@@ -108,7 +143,10 @@ export async function POST(request: NextRequest) {
     )
   }
   if (role !== "admin" && role !== "recruiter") {
-    return NextResponse.json({ success: false, message: "Role must be admin or recruiter" }, { status: 400 })
+    return NextResponse.json(
+      { success: false, message: "Role must be admin or recruiter" },
+      { status: 400 }
+    )
   }
 
   try {
@@ -122,7 +160,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(record, { status: 201 })
   } catch (error) {
     if (error instanceof BackendError) {
-      // normalize “already exists” to 409 for the UI
       const message =
         error.status === 409 || /exists/i.test(error.message)
           ? "User with this email already exists in your organization"

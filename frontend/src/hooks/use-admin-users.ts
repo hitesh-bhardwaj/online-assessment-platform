@@ -27,6 +27,19 @@ export interface AdminUsersQuery {
   status?: 'active' | 'invited' | 'suspended';
   search?: string;
 }
+export type UpdateAdminUserPayload = Partial<{
+  email: string;
+  password: string;
+  firstName: string;
+  lastName: string;
+  role: 'admin' | 'recruiter';
+  isActive: boolean;
+  status: 'active' | 'suspended';
+  permissions: Record<string, any>;
+}>;
+
+
+
 
 /**
  * List admin users with filters + pagination
@@ -107,6 +120,23 @@ export function useUpdateAdminUserStatus() {
         url: `/admin/users/${userId}`,
         method: 'PATCH',
         data: { status },
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: adminKeys.users(), exact: false });
+    },
+  });
+}
+
+
+// NEW: full update
+export function useUpdateAdminUser() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ userId, data }: { userId: string; data: UpdateAdminUserPayload }) =>
+      apiRequest({
+        url: `/admin/users/${userId}`,
+        method: 'PUT',
+        data,
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: adminKeys.users(), exact: false });

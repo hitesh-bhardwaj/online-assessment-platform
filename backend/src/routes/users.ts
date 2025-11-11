@@ -42,43 +42,14 @@ const createUserSchema = {
 
 const updateUserSchema = {
   body: {
-    firstName: {
-      optional: true,
-      ...commonSchemas.name,
-      isLength: { options: { min: 1, max: 50 } },
-      errorMessage: 'First name must be between 1 and 50 characters'
-    },
-    lastName: {
-      optional: true,
-      ...commonSchemas.name,
-      isLength: { options: { min: 1, max: 50 } },
-      errorMessage: 'Last name must be between 1 and 50 characters'
-    },
-    role: {
-      optional: true,
-      isIn: {
-        options: [['admin', 'recruiter']],
-        errorMessage: 'Role must be admin or recruiter'
-      }
-    },
-    isActive: {
-      optional: true,
-      isBoolean: true,
-      errorMessage: 'isActive must be a boolean'
-    },
-    permissions: {
-      optional: true,
-      isObject: true,
-      errorMessage: 'Permissions must be an object'
-    }
-  }
-};
-
-const resetPasswordSchema = {
-  body: {
-    newPassword: {
-      ...commonSchemas.password
-    }
+    email: { optional: true, ...commonSchemas.email },
+    password: { optional: true, ...commonSchemas.password },
+    firstName: { optional: true, ...commonSchemas.name, isLength: { options: { min: 1, max: 50 } } },
+    lastName: { optional: true, ...commonSchemas.name, isLength: { options: { min: 1, max: 50 } } },
+    role: { optional: true, isIn: { options: [['admin', 'recruiter']], errorMessage: 'Role must be admin or recruiter' } },
+    isActive: { optional: true, isBoolean: true },
+    status: { optional: true, isIn: { options: [['active', 'suspended']], errorMessage: 'status must be active or suspended' } },
+    permissions: { optional: true, isObject: true }
   }
 };
 
@@ -120,53 +91,11 @@ const getUsersQuerySchema = {
 };
 
 // User management routes
-/**
- * @route   GET /api/users
- * @desc    Get all users in organization
- * @access  Private (Admin/Recruiter with read permission)
- */
-router.get(
-  '/',
-  authenticate,
-  requirePermission('users', 'read'),
-  validateRequest(getUsersQuerySchema),
-  userController.getUsers
-);
+router.get('/', authenticate, requirePermission('users', 'read'), validateRequest(getUsersQuerySchema), userController.getUsers);
+router.get('/:userId', authenticate, requirePermission('users', 'read'), validateRequest({ params: validateObjectId('userId') }), userController.getUserById);
+router.post('/', authenticate, requireUserManagement, rateLimitByUser(10, 60 * 60 * 1000), validateRequest(createUserSchema), userController.createUser);
 
-/**
- * @route   GET /api/users/:userId
- * @desc    Get user by ID
- * @access  Private (Admin/Recruiter with read permission)
- */
-router.get(
-  '/:userId',
-  authenticate,
-  requirePermission('users', 'read'),
-  validateRequest({ params: validateObjectId('userId') }),
-  userController.getUserById
-);
-
-/**
- * @route   POST /api/users
- * @desc    Create new user
- * @access  Private (Admin only)
- */
-router.post(
-  '/',
-  authenticate,
-  requireUserManagement,
-  rateLimitByUser(10, 60 * 60 * 1000), // 10 requests per hour
-  validateRequest(createUserSchema),
-  userController.createUser
-);
-
-/**
- * @route   PUT /api/users/:userId
- * @desc    Update user
- * @access  Private (Admin only)
- */
-router.put(
-  '/:userId',
+router.put('/:userId',
   authenticate,
   requirePermission('users', 'update'),
   validateRequest({ params: validateObjectId('userId') }),
@@ -174,9 +103,17 @@ router.put(
   userController.updateUser
 );
 
+// router.patch('/:userId/status',
+//   authenticate,
+//   requirePermission('users', 'update'),
+//   validateRequest({ params: validateObjectId('userId') }),
+//   validateRequest({ body: { status: { isIn: { options: [['active', 'suspended']], errorMessage: 'status must be active or suspended' } } } }),
+//   userController.updateUserStatus // add this small helper below
+// );
+
 /**
  * @route   DELETE /api/users/:userId
- * @desc    Delete user (deactivate)
+ * @desc    Hard delete user (permanently removes the document)
  * @access  Private (Admin only)
  */
 router.delete(
@@ -184,29 +121,18 @@ router.delete(
   authenticate,
   requirePermission('users', 'delete'),
   validateRequest({ params: validateObjectId('userId') }),
-  userController.deleteUser
+  userController.deleteUser // <-- now hard-deletes
 );
 
-/**
- * @route   PUT /api/users/:userId/reset-password
- * @desc    Reset user password (admin only)
- * @access  Private (Admin only)
- */
 router.put(
   '/:userId/reset-password',
   authenticate,
   requireAdmin,
-  rateLimitByUser(5, 60 * 60 * 1000), // 5 password resets per hour
+  rateLimitByUser(5, 60 * 60 * 1000),
   validateRequest({ params: validateObjectId('userId') }),
-  validateRequest(resetPasswordSchema),
   userController.resetUserPassword
 );
 
-/**
- * @route   GET /api/users/:userId/activity
- * @desc    Get user activity and statistics
- * @access  Private (Admin/Recruiter with read permission)
- */
 router.get(
   '/:userId/activity',
   authenticate,
