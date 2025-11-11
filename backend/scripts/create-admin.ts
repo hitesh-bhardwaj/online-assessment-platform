@@ -1,7 +1,6 @@
 import path from 'path';
 import dotenv from 'dotenv';
 import mongoose from 'mongoose';
-
 import connectDB from '../src/config/db';
 import Organization from '../src/models/Organization';
 import User from '../src/models/User';
