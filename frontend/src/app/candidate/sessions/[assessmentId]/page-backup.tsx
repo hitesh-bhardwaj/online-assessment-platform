@@ -19,7 +19,7 @@ import { CandidateQuestionView } from "@/features/candidate-assessment/question-
 import { CandidateTimer } from "@/features/candidate-assessment/timer"
 import { ProctoringConsentDialog } from "@/features/candidate-assessment/consent-dialog"
 import { useProctoringSignals } from "@/features/candidate-assessment/use-proctoring-signals"
-import { useProctoringMediaStreams } from "@/features/candidate-assessment/use-proctoring-media"
+// import { useProctoringMediaStreams } from "@/features/candidate-assessment/use-proctoring-media"
 import { useCandidateSubmit } from "@/hooks/use-candidate-submit"
 import { useCandidateAssessment, type CandidateAssessmentBundle } from "@/hooks/use-candidate-assessment"
 
