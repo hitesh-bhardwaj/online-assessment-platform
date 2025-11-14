@@ -25,6 +25,9 @@ export function AssessmentOverviewTab({
   assessment,
   statusLabel,
   statusVariant,
+  onInviteCandidate,
+  setActiveTab,
+  questionbank,
   questionRows,
   questionColumns,
   basePath,
@@ -70,12 +73,13 @@ export function AssessmentOverviewTab({
             <h3 className="text-sm font-semibold text-muted-foreground">Quick actions</h3>
             <div className="flex flex-wrap gap-2">
               <Button variant="outline" size="sm" asChild>
-                <Link href={`${basePath}/questions?assessment=${assessment._id}`}>
+                <Link href={`#`} onClick={()=>{setActiveTab("questions")}}>
                   <ArrowUpRight className="mr-2 h-4 w-4" /> Manage bank
                 </Link>
               </Button>
+              
               <Button variant="outline" size="sm" asChild>
-                <Link href={`${basePath}/invitations?assessment=${assessment._id}`}>
+                <Link href={`#`} onClick={onInviteCandidate}>
                   <Users className="mr-2 h-4 w-4" /> Invite candidates
                 </Link>
               </Button>

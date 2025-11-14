@@ -618,74 +618,89 @@ export const assessmentController = {
   },
 
   // Delete assessment
-  async deleteAssessment(req: AuthenticatedRequest, res: Response) {
-    try {
-      const { assessmentId } = req.params;
-      const user = req.user;
+ async deleteAssessment(req: AuthenticatedRequest, res: Response) {
+  try {
+    const { assessmentId } = req.params;
+    const user = req.user;
 
-      if (!user) {
-        return res.status(401).json({
-          success: false,
-          message: 'User not authenticated'
-        });
-      }
-
-      const assessment = await Assessment.findOne({
-        _id: assessmentId,
-        organizationId: user.organizationId,
-        isActive: true
-      });
-
-      if (!assessment) {
-        return res.status(404).json({
-          success: false,
-          message: 'Assessment not found'
-        });
-      }
-
-      // Check for invitations
-      const { Invitation } = await import('../models');
-      const hasInvitations = await Invitation.countDocuments({
-        assessmentId: assessment._id
-      });
-
-      if (hasInvitations > 0) {
-        return res.status(400).json({
-          success: false,
-          message: 'Cannot delete assessment with existing invitations. Deactivate instead.'
-        });
-      }
-
-      // Soft delete
-      assessment.isActive = false;
-      await assessment.save();
-
-      await SystemLog.create({
-        level: 'info',
-        category: 'assessment',
-        action: 'assessment_delete',
-        message: 'Assessment deleted',
-        details: { assessmentId, title: assessment.title },
-        context: {
-          organizationId: user.organizationId,
-          assessmentId: assessment._id
-        },
-        userInfo: getUserInfo(req),
-        timestamp: new Date()
-      });
-
-      res.json({
-        success: true,
-        message: 'Assessment deleted successfully'
-      });
-
-    } catch (error) {
-      res.status(500).json({
+    if (!user) {
+      return res.status(401).json({
         success: false,
-        message: 'Internal server error'
+        message: "User not authenticated",
       });
     }
-  },
+
+    const assessment = await Assessment.findOne({
+      _id: assessmentId,
+      organizationId: user.organizationId,
+      isActive: true,
+    });
+
+    if (!assessment) {
+      return res.status(404).json({
+        success: false,
+        message: "Assessment not found",
+      });
+    }
+
+    // ✅ Only block if there are ACTIVE / PENDING invitations
+    const { Invitation } = await import("../models");
+
+    // Adjust the statuses here to match your Invitation model
+    const activeInvitationCount = await Invitation.countDocuments({
+      assessmentId: assessment._id,
+      // If you track status:
+      status: { $in: ["pending", "in_progress"] }, // or whatever you use
+      // If you also have soft-delete on invitations:
+      // isActive: true,
+    });
+
+    if (activeInvitationCount > 0) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Cannot archive assessment with active invitations. Please cancel or complete them first.",
+      });
+    }
+
+    // ✅ Soft delete / archive
+    assessment.isActive = false;
+
+    // If you have a `status` field that powers `AssessmentSummary['status']`
+    if (assessment.status !== "archived") {
+      assessment.status = "archived";
+    }
+
+    await assessment.save();
+
+    await SystemLog.create({
+      level: "info",
+      category: "assessment",
+      action: "assessment_delete",
+      message: "Assessment archived",
+      details: { assessmentId, title: assessment.title },
+      context: {
+        organizationId: user.organizationId,
+        assessmentId: assessment._id,
+      },
+      userInfo: getUserInfo(req),
+      timestamp: new Date(),
+    });
+
+    return res.json({
+      success: true,
+      message: "Assessment archived successfully",
+      data: { id: assessment._id },
+    });
+  } catch (error) {
+    console.error("deleteAssessment error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error",
+    });
+  }
+}
+,
 
   // Get assessment statistics
   async getAssessmentStats(req: AuthenticatedRequest, res: Response) {
