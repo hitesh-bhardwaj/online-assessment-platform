@@ -5,7 +5,7 @@ import { promisify } from 'util';
 import fs from 'fs/promises';
 import path from 'path';
 import AssessmentResult from '../models/AssessmentResult';
-import { uploadMergedRecording, fetchProctoringSegment } from '../utils/storage';
+import { uploadMergedRecording, fetchProctoringSegment, deleteFromR2 } from '../utils/storage';
 
 const execAsync = promisify(exec);
 const MONGO_URI = process.env.MONGODB_URI || process.env.MONGODB_ATLAS_URI || 'mongodb://localhost:27017/oap';
@@ -41,8 +41,9 @@ async function mergeChunks(resultId: string, type: 'webcam' | 'screen', segments
   const outputFileName = `${type}-merged.webm`;
   const outputPath = path.join(baseDir, outputFileName);
 
-  // Track temp files for cleanup
+  // Track temp files for cleanup and create mapping of segment to file path
   const tempFilesToCleanup: string[] = [];
+  const segmentFilePaths: Map<any, string> = new Map();
 
   try {
     console.log(`  Merging ${sortedSegments.length} chunks...`);
@@ -70,8 +71,8 @@ async function mergeChunks(resultId: string, type: 'webcam' | 'screen', segments
             // Write to temp file
             await fs.writeFile(tempFilePath, buffer);
 
-            // Update segment to use temp file path
-            segment.filePath = tempFilePath;
+            // Map segment to temp file path (don't modify original segment!)
+            segmentFilePaths.set(segment, tempFilePath);
             tempFilesToCleanup.push(tempFilePath);
 
             console.log(`    ✅ Downloaded ${(buffer.length / 1024).toFixed(2)} KB`);
@@ -82,32 +83,46 @@ async function mergeChunks(resultId: string, type: 'webcam' | 'screen', segments
           console.error(`    ❌ Failed to download ${segment.fileKey}:`, downloadError);
           throw downloadError;
         }
+      } else if (segment.filePath) {
+        // Local segment - use existing file path
+        segmentFilePaths.set(segment, segment.filePath);
       }
     }
 
-    // Step 2: Create ffmpeg concat file list
-    console.log(`  Step 2: Creating file list for ffmpeg concat...`);
-    const fileListPath = path.join(baseDir, `${type}-filelist.txt`);
-    const fileListContent = sortedSegments
-      .map(segment => `file '${segment.filePath.replace(/'/g, "'\\''")}'`)
-      .join('\n');
+    // Step 2: Binary concatenate WebM fragments
+    console.log(`  Step 2: Binary concatenating ${sortedSegments.length} WebM fragments...`);
 
-    await fs.writeFile(fileListPath, fileListContent);
-    console.log(`  Created file list with ${sortedSegments.length} entries`);
+    // MediaRecorder with timeslice creates WebM fragments designed for binary concatenation:
+    // - First chunk: Full WebM header + first cluster
+    // - Subsequent chunks: Additional clusters
+    // - These are MEANT to be concatenated as raw bytes
 
-    // Step 3: Merge using ffmpeg concat demuxer (no re-encoding)
-    console.log(`  Step 3: Merging with ffmpeg concat demuxer...`);
+    const concatenatedPath = path.join(baseDir, `${type}-concatenated.webm`);
+    const chunks: Buffer[] = [];
 
-    // Use concat demuxer for fast, lossless merge
-    // -f concat: Use concat demuxer
-    // -safe 0: Allow absolute paths
-    // -c copy: Copy streams without re-encoding (fast!)
-    const command = `ffmpeg -f concat -safe 0 -i "${fileListPath}" -c copy "${outputPath}" -y`;
+    for (const segment of sortedSegments) {
+      const filePath = segmentFilePaths.get(segment);
+      if (!filePath) {
+        throw new Error(`No file path found for segment ${segment.segmentId}`);
+      }
+      const buffer = await fs.readFile(filePath);
+      chunks.push(buffer);
+      console.log(`    Added fragment ${segment.sequence}: ${(buffer.length / 1024).toFixed(2)} KB`);
+    }
+
+    const concatenated = Buffer.concat(chunks);
+    await fs.writeFile(concatenatedPath, concatenated);
+    console.log(`  ✅ Concatenated ${sortedSegments.length} fragments: ${(concatenated.length / 1024 / 1024).toFixed(2)} MB`);
+
+    // Step 3: Re-mux with ffmpeg to fix container and ensure playability
+    console.log(`  Step 3: Re-muxing with ffmpeg to fix WebM container...`);
+
+    const command = `ffmpeg -i "${concatenatedPath}" -c copy "${outputPath}" -y`;
 
     const { stdout, stderr } = await execAsync(command, { maxBuffer: 1024 * 1024 * 10 });
 
-    // Clean up file list
-    await fs.unlink(fileListPath);
+    // Clean up concatenated file
+    await fs.unlink(concatenatedPath);
 
     // Check output file
     const stats = await fs.stat(outputPath);
@@ -151,6 +166,22 @@ async function mergeChunks(resultId: string, type: 'webcam' | 'screen', segments
       } catch (cleanupError) {
         console.warn(`    ⚠️  Could not delete temp file ${tempFile}:`, cleanupError);
       }
+    }
+
+    // Delete individual chunks from R2 after successful merge
+    if (r2Result) {
+      console.log(`  Step 6: Deleting individual chunks from R2...`);
+      let deletedCount = 0;
+      for (const segment of sortedSegments) {
+        if (segment.storage === 'r2' && segment.fileKey) {
+          const deleted = await deleteFromR2(segment.fileKey);
+          if (deleted) {
+            deletedCount++;
+            console.log(`    🗑️  Deleted R2 chunk: ${path.basename(segment.fileKey)}`);
+          }
+        }
+      }
+      console.log(`  ✅ Deleted ${deletedCount}/${sortedSegments.length} R2 chunks`);
     }
 
     return {
@@ -267,6 +298,27 @@ export async function mergeRecordingsForResult(resultId: string) {
           result.proctoringReport.mergeStatus.screen = 'completed';
         }
         console.log(`  Screen URL: ${screenResult.r2Url ? 'R2' : 'Local'} - ${result.proctoringReport.recordingUrls.screen}`);
+      }
+
+      // Clear individual chunk segments from mediaSegments array after successful merge
+      // This allows frontend to use merged URLs from recordingUrls
+      console.log(`\n📝 Clearing individual chunk segments from database...`);
+
+      const originalSegmentCount = result.proctoringReport.mediaSegments?.length || 0;
+      const typesToClear: Array<'webcam' | 'screen'> = [];
+
+      if (webcamResult) typesToClear.push('webcam');
+      if (screenResult) typesToClear.push('screen');
+
+      if (typesToClear.length > 0 && result.proctoringReport.mediaSegments) {
+        // Remove all segments of merged types
+        result.proctoringReport.mediaSegments = result.proctoringReport.mediaSegments.filter(
+          segment => !typesToClear.includes(segment.type as 'webcam' | 'screen')
+        );
+
+        const removedCount = originalSegmentCount - result.proctoringReport.mediaSegments.length;
+        console.log(`  Removed ${removedCount} chunk segments (${typesToClear.join(', ')})`);
+        console.log(`  Remaining segments: ${result.proctoringReport.mediaSegments.length}`);
       }
 
       result.markModified('proctoringReport');

@@ -1,7 +1,7 @@
 import fs from 'fs/promises';
 import path from 'path';
 
-import { GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import { DeleteObjectCommand, GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 
 const getLocalMediaRoot = () => {
   const PROCTORING_MEDIA_DIR = process.env.PROCTORING_MEDIA_DIR;
@@ -184,6 +184,35 @@ export const uploadMergedRecording = async (
   } catch (error) {
     console.error(`[Storage] ❌ Failed to upload merged ${type} to R2:`, error);
     return null;
+  }
+};
+
+/**
+ * Delete a file from R2 storage
+ * Returns true if successful, false otherwise
+ */
+export const deleteFromR2 = async (fileKey: string): Promise<boolean> => {
+  const client = getR2Client();
+  const R2_BUCKET = process.env.R2_BUCKET;
+
+  if (!client || !R2_BUCKET) {
+    console.log(`[Storage] R2 not configured, cannot delete ${fileKey}`);
+    return false;
+  }
+
+  try {
+    await client.send(
+      new DeleteObjectCommand({
+        Bucket: R2_BUCKET,
+        Key: fileKey,
+      }),
+    );
+
+    console.log(`[Storage] ✅ Deleted from R2: ${fileKey}`);
+    return true;
+  } catch (error) {
+    console.error(`[Storage] ❌ Failed to delete from R2: ${fileKey}`, error);
+    return false;
   }
 };
 

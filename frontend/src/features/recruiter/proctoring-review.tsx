@@ -183,33 +183,35 @@ export function RecruiterProctoringReview({ resultId, open, onOpenChange }: Recr
     const firstByType: Partial<Record<MediaType, { segmentId: string; src: string; mimeType?: string; recordedAt?: string }>> =
       {}
 
-    data.proctoring.mediaSegments.forEach((segment) => {
-      if (firstByType[segment.type]) return
-      firstByType[segment.type] = {
-        segmentId: segment.segmentId,
-        src: `${basePath}${segment.segmentId}?ts=${encodeURIComponent(segment.recordedAt ?? segment.segmentId)}`,
-        mimeType: segment.mimeType,
-        recordedAt: segment.recordedAt,
-      }
-    })
-
+    // ALWAYS prioritize merged recordings over individual chunks
+    // Individual chunks are temporary and get deleted after merge
+    const mergeStatus = data.proctoring.mergeStatus
     const latest = data.proctoring.latest
-    if (latest.screen && !firstByType.screen) {
-      firstByType.screen = {
-        segmentId: latest.screen,
-        src: `${basePath}${latest.screen}`,
-      }
-    }
-    if (latest.webcam && !firstByType.webcam) {
+
+    // Check for merged webcam recording
+    if (mergeStatus?.webcam === 'completed' && latest.webcam) {
       firstByType.webcam = {
-        segmentId: latest.webcam,
-        src: `${basePath}${latest.webcam}`,
+        segmentId: 'webcam-merged',
+        src: latest.webcam, // Use R2 public URL directly
+        mimeType: 'video/webm',
       }
     }
-    if (latest.microphone && !firstByType.microphone) {
+
+    // Check for merged screen recording
+    if (mergeStatus?.screen === 'completed' && latest.screen) {
+      firstByType.screen = {
+        segmentId: 'screen-merged',
+        src: latest.screen, // Use R2 public URL directly
+        mimeType: 'video/webm',
+      }
+    }
+
+    // Check for merged microphone recording
+    if (mergeStatus?.microphone === 'completed' && latest.microphone) {
       firstByType.microphone = {
-        segmentId: latest.microphone,
-        src: `${basePath}${latest.microphone}`,
+        segmentId: 'microphone-merged',
+        src: latest.microphone, // Use R2 public URL directly
+        mimeType: 'audio/webm',
       }
     }
 
