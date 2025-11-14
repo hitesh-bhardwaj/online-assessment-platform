@@ -240,7 +240,7 @@ const candidateProctoringController = {
 
       // Note: recordingUrls are NOT updated here during chunk upload
       // They will be updated by the merge script after all chunks are combined
-      console.log(`[Proctoring] Media segment saved: ${normalizedType} segment ${normalizedSequence} (storage: ${storageInfo.storage})`);
+      console.log(`[Proctoring] Media segment saved: ${normalizedType} segment ${sequence ?? 'unknown'} (storage: ${storageInfo.storage})`);
 
       trimCollections(result);
       result.markModified('proctoringReport');

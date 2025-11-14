@@ -663,24 +663,8 @@ function CandidateAssessmentShell({
     }
   }, [timeRemaining, isCompleted, submitMutation])
 
-  // Handle submit with pending uploads validation
+  // Handle submit - disabled via button when uploads pending
   const handleSubmit = () => {
-    // Check for pending uploads
-    if (pendingUploads > 0) {
-      const totalPending = pendingUploads
-      const message =
-        `You have ${totalPending} recording chunk${totalPending > 1 ? 's' : ''} still uploading.\n\n` +
-        `Submitting now may result in incomplete proctoring recordings. ` +
-        `Wait for uploads to finish?\n\n` +
-        `Click "OK" to wait, or "Cancel" to submit anyway.`
-
-      const shouldWait = window.confirm(message)
-      if (shouldWait) {
-        return // Don't submit, wait for uploads
-      }
-    }
-
-    // Proceed with submission
     submitMutation.mutate()
   }
 
@@ -874,15 +858,29 @@ function CandidateAssessmentShell({
                 {formatTime(timeRemaining)}
               </div>
             )}
+            {pendingUploads > 0 && (
+              <div className="hidden sm:flex items-center gap-2 rounded-md bg-blue-50 px-3 py-1.5 text-sm font-medium text-blue-700">
+                <svg className="h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                Finalizing session...
+              </div>
+            )}
             <Button
               size="sm"
               onClick={handleSubmit}
-              disabled={isCompleted || submitMutation.isPending}
+              disabled={isCompleted || submitMutation.isPending || pendingUploads > 0}
               className="gap-2"
+              title={pendingUploads > 0 ? "Please wait while we finalize your session" : undefined}
             >
               <Play className="h-3.5 w-3.5" />
-              <span className="hidden sm:inline">{submitMutation.isPending ? "Submitting…" : "Submit"}</span>
-              <span className="sm:hidden">Submit</span>
+              <span className="hidden sm:inline">
+                {submitMutation.isPending ? "Submitting…" : pendingUploads > 0 ? "Processing..." : "Submit Assessment"}
+              </span>
+              <span className="sm:hidden">
+                {pendingUploads > 0 ? "Wait..." : "Submit"}
+              </span>
             </Button>
           </div>
         </div>
@@ -927,9 +925,14 @@ function CandidateAssessmentShell({
             )}
 
             {!captureAlert && pendingUploads > 0 && (
-              <div className="flex items-center gap-3 rounded-lg border border-blue-200 bg-blue-50 px-4 py-2 text-xs text-blue-700">
-                <Loader2 className="h-4 w-4 animate-spin" />
-                <span>Uploading proctoring data ({pendingUploads} segments pending)</span>
+              <div className="flex items-center gap-3 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-700">
+                <Loader2 className="h-4 w-4 animate-spin flex-shrink-0" />
+                <div>
+                  <strong className="font-semibold">Finalizing your session...</strong>
+                  <p className="mt-0.5 text-xs text-blue-600">
+                    Please wait a moment before submitting. Your progress is being saved.
+                  </p>
+                </div>
               </div>
             )}
 
@@ -1117,10 +1120,10 @@ function CandidateAssessmentShell({
               <Button
                 variant="outline"
                 onClick={() => setCurrentIndex(currentIndex - 1)}
-                disabled={!canGoPrev || !assessment.settings?.allowReviewAnswers}
+                disabled={!canGoPrev || !data.assessment.settings?.allowReviewAnswers}
                 className="gap-2"
                 title={
-                  !assessment.settings?.allowReviewAnswers
+                  !data.assessment.settings?.allowReviewAnswers
                     ? "Review is not allowed for this assessment"
                     : undefined
                 }

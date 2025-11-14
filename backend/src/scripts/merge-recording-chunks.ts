@@ -5,7 +5,7 @@ import { promisify } from 'util';
 import fs from 'fs/promises';
 import path from 'path';
 import AssessmentResult from '../models/AssessmentResult';
-import { uploadMergedRecording } from '../utils/storage';
+import { uploadMergedRecording, fetchProctoringSegment } from '../utils/storage';
 
 const execAsync = promisify(exec);
 const MONGO_URI = process.env.MONGODB_URI || process.env.MONGODB_ATLAS_URI || 'mongodb://localhost:27017/oap';
@@ -29,7 +29,7 @@ async function mergeChunks(resultId: string, type: 'webcam' | 'screen', segments
 
   // Sort by sequence to ensure correct order
   const sortedSegments = segments
-    .filter(s => s.filePath && s.sequence !== undefined)
+    .filter(s => (s.filePath || s.fileKey) && s.sequence !== undefined)
     .sort((a, b) => a.sequence - b.sequence);
 
   if (sortedSegments.length === 0) {
@@ -41,41 +41,73 @@ async function mergeChunks(resultId: string, type: 'webcam' | 'screen', segments
   const outputFileName = `${type}-merged.webm`;
   const outputPath = path.join(baseDir, outputFileName);
 
+  // Track temp files for cleanup
+  const tempFilesToCleanup: string[] = [];
+
   try {
     console.log(`  Merging ${sortedSegments.length} chunks...`);
 
-    // Step 1: Binary concatenation (MediaRecorder chunks 2+ don't have WebM headers)
-    console.log(`  Step 1: Concatenating binary data...`);
-    const chunks: Buffer[] = [];
-
+    // Step 1: Download R2 segments if needed
+    console.log(`  Step 1: Downloading R2 segments (if any)...`);
     for (const segment of sortedSegments) {
-      const chunkData = await fs.readFile(segment.filePath);
-      chunks.push(chunkData);
-      console.log(`    Read chunk ${segment.sequence}: ${(chunkData.length / 1024).toFixed(2)} KB`);
+      if (segment.storage === 'r2' && segment.fileKey) {
+        // Download R2 segment to temp location
+        const tempFileName = `temp-${path.basename(segment.fileKey)}`;
+        const tempFilePath = path.join(baseDir, tempFileName);
+
+        console.log(`    Downloading ${segment.fileKey} to ${tempFilePath}`);
+
+        try {
+          const r2Response = await fetchProctoringSegment(segment.fileKey);
+          if (r2Response && r2Response.Body) {
+            // Convert stream to buffer
+            const chunks: Uint8Array[] = [];
+            for await (const chunk of r2Response.Body as any) {
+              chunks.push(chunk);
+            }
+            const buffer = Buffer.concat(chunks);
+
+            // Write to temp file
+            await fs.writeFile(tempFilePath, buffer);
+
+            // Update segment to use temp file path
+            segment.filePath = tempFilePath;
+            tempFilesToCleanup.push(tempFilePath);
+
+            console.log(`    ✅ Downloaded ${(buffer.length / 1024).toFixed(2)} KB`);
+          } else {
+            console.warn(`    ⚠️  Failed to download ${segment.fileKey} - no response body`);
+          }
+        } catch (downloadError) {
+          console.error(`    ❌ Failed to download ${segment.fileKey}:`, downloadError);
+          throw downloadError;
+        }
+      }
     }
 
-    const mergedBuffer = Buffer.concat(chunks);
+    // Step 2: Create ffmpeg concat file list
+    console.log(`  Step 2: Creating file list for ffmpeg concat...`);
+    const fileListPath = path.join(baseDir, `${type}-filelist.txt`);
+    const fileListContent = sortedSegments
+      .map(segment => `file '${segment.filePath.replace(/'/g, "'\\''")}'`)
+      .join('\n');
 
-    // Step 2: Write concatenated file
-    const concatenatedPath = path.join(baseDir, `${type}-concatenated.webm`);
-    await fs.writeFile(concatenatedPath, mergedBuffer);
-    console.log(`  Step 2: Wrote concatenated file: ${(mergedBuffer.length / 1024 / 1024).toFixed(2)} MB`);
+    await fs.writeFile(fileListPath, fileListContent);
+    console.log(`  Created file list with ${sortedSegments.length} entries`);
 
-    // Step 3: Re-encode with ffmpeg to fix timestamps
-    console.log(`  Step 3: Re-encoding with ffmpeg (fast preset)...`);
+    // Step 3: Merge using ffmpeg concat demuxer (no re-encoding)
+    console.log(`  Step 3: Merging with ffmpeg concat demuxer...`);
 
-    // Using optimized settings for faster merge:
-    // -cpu-used 4: Fast encoding (vs 0 = slowest/best quality)
-    // -crf 23: Good quality (vs 10 = best quality)
-    // -deadline realtime: Faster processing
-    const command = type === 'screen'
-      ? `ffmpeg -fflags +genpts -i "${concatenatedPath}" -c:v libvpx -b:v 2000k -crf 23 -cpu-used 4 -deadline realtime "${outputPath}" -y`
-      : `ffmpeg -fflags +genpts -i "${concatenatedPath}" -c:v libvpx -c:a libopus -b:v 1200k -b:a 96k -crf 23 -cpu-used 4 -deadline realtime "${outputPath}" -y`;
+    // Use concat demuxer for fast, lossless merge
+    // -f concat: Use concat demuxer
+    // -safe 0: Allow absolute paths
+    // -c copy: Copy streams without re-encoding (fast!)
+    const command = `ffmpeg -f concat -safe 0 -i "${fileListPath}" -c copy "${outputPath}" -y`;
 
     const { stdout, stderr } = await execAsync(command, { maxBuffer: 1024 * 1024 * 10 });
 
-    // Clean up concatenated file
-    await fs.unlink(concatenatedPath);
+    // Clean up file list
+    await fs.unlink(fileListPath);
 
     // Check output file
     const stats = await fs.stat(outputPath);
@@ -110,6 +142,17 @@ async function mergeChunks(resultId: string, type: 'webcam' | 'screen', segments
       console.log(`  ⚠️  R2 upload skipped (not configured or failed), keeping local file`);
     }
 
+    // Clean up downloaded temp files
+    console.log(`  Step 5: Cleaning up temporary files...`);
+    for (const tempFile of tempFilesToCleanup) {
+      try {
+        await fs.unlink(tempFile);
+        console.log(`    🗑️  Deleted temp file: ${path.basename(tempFile)}`);
+      } catch (cleanupError) {
+        console.warn(`    ⚠️  Could not delete temp file ${tempFile}:`, cleanupError);
+      }
+    }
+
     return {
       type,
       segmentCount: sortedSegments.length,
@@ -125,6 +168,13 @@ async function mergeChunks(resultId: string, type: 'webcam' | 'screen', segments
     try {
       await fs.unlink(outputPath).catch(() => {});
     } catch {}
+
+    // Clean up temp files on error
+    for (const tempFile of tempFilesToCleanup) {
+      try {
+        await fs.unlink(tempFile).catch(() => {});
+      } catch {}
+    }
 
     return null;
   }
@@ -148,8 +198,8 @@ export async function mergeRecordingsForResult(resultId: string) {
     }
 
     const segments = result.proctoringReport.mediaSegments;
-    const webcamSegments = segments.filter(s => s.type === 'webcam' && s.storage === 'local');
-    const screenSegments = segments.filter(s => s.type === 'screen' && s.storage === 'local');
+    const webcamSegments = segments.filter(s => s.type === 'webcam');
+    const screenSegments = segments.filter(s => s.type === 'screen');
 
     console.log(`Found ${webcamSegments.length} webcam + ${screenSegments.length} screen segments`);
 
@@ -170,18 +220,18 @@ export async function mergeRecordingsForResult(resultId: string) {
     await result.save();
 
     if (webcamSegments.length === 0 && screenSegments.length === 0) {
-      console.log(`❌ No local segments to merge`);
+      console.log(`❌ No segments to merge`);
       return;
     }
 
-    // Determine base directory from first segment
-    const firstSegment = segments.find(s => s.filePath);
-    if (!firstSegment || !firstSegment.filePath) {
-      console.log(`❌ No file paths found in segments`);
-      return;
-    }
+    // Determine base directory - use local if available, otherwise temp directory
+    const localSegment = segments.find(s => s.storage === 'local' && s.filePath);
+    const baseDir = localSegment && localSegment.filePath
+      ? path.dirname(localSegment.filePath)
+      : path.join(process.cwd(), 'proctoring-media', resultId);
 
-    const baseDir = path.dirname(firstSegment.filePath);
+    // Ensure base directory exists
+    await fs.mkdir(baseDir, { recursive: true });
 
     // Merge webcam chunks
     const webcamResult = await mergeChunks(resultId, 'webcam', webcamSegments, baseDir);
@@ -339,7 +389,7 @@ async function main() {
       });
 
       console.log(`\nMerging chunks for latest result: ${results[0]._id}\n`);
-      await mergeRecordingsForResult(results[0]._id.toString());
+      await mergeRecordingsForResult(String(results[0]._id));
     }
 
     await mongoose.disconnect();
