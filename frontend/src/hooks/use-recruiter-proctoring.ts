@@ -36,5 +36,19 @@ export function useRecruiterProctoring(resultId: string | null, { enabled = true
       return response.data
     },
     staleTime: 10_000,
+    // Auto-poll every 10 seconds when recordings are being processed
+    refetchInterval: (query) => {
+      const data = query.state.data
+      if (!data?.proctoring?.mergeStatus) return false
+
+      const { webcam, screen } = data.proctoring.mergeStatus
+      const isProcessing =
+        webcam === 'pending' ||
+        webcam === 'processing' ||
+        screen === 'pending' ||
+        screen === 'processing'
+
+      return isProcessing ? 10_000 : false // Poll every 10 seconds if processing
+    },
   })
 }

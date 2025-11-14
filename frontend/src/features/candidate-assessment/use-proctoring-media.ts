@@ -104,6 +104,7 @@ export interface UseProctoringMediaOptions {
   chunkDurationMs?: number
   onError?: (channel: "webcam" | "screen", error: Error) => void
   includeScreen?: boolean
+  includeWebcam?: boolean
   onScreenReady?: () => void
   onScreenDenied?: (error: Error) => void
   onScreenEnded?: () => void
@@ -121,6 +122,7 @@ export function useProctoringMediaStreams({
   chunkDurationMs = DEFAULT_TIMESLICE,
   onError,
   includeScreen = false,
+  includeWebcam = true,
   onScreenReady,
   onScreenDenied,
   onScreenEnded,
@@ -273,69 +275,75 @@ export function useProctoringMediaStreams({
     const setup = async () => {
       console.log('[useProctoringMedia] Running setup function...')
       try {
-        console.log('[useProctoringMedia] Requesting webcam and microphone...')
-        // Request fresh webcam and microphone streams
-        const webcamStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true })
-        console.log('[useProctoringMedia] ✅ Webcam and microphone stream obtained:', {
-          tracks: webcamStream.getTracks().length,
-          videoTrack: webcamStream.getVideoTracks()[0]?.label,
-          audioTrack: webcamStream.getAudioTracks()[0]?.label
-        })
-        onWebcamStatusChangeRef.current?.("active")
-
-        if (cancelled) {
-          webcamStream.getTracks().forEach((track) => track.stop())
-          return
-        }
-
-        webcamStreamRef.current = webcamStream
-        const mimeType = getSupportedMimeType(true) // Include audio for webcam
-        const webcamRecorder = new MediaRecorder(webcamStream, {
-          ...(mimeType && { mimeType }), // Only set if we found a supported type
-          videoBitsPerSecond: 1_200_000,
-        })
-        webcamRecorderRef.current = webcamRecorder
-        webcamSequenceRef.current = 0
-
-        webcamRecorder.ondataavailable = (event) => {
-          console.log('[Proctoring] Webcam chunk received:', {
-            blobSize: event.data?.size || 0,
-            blobType: event.data?.type || 'unknown',
-            isEmpty: !event.data || event.data.size === 0,
-            sequence: webcamSequenceRef.current
+        // Setup webcam recording if enabled
+        if (includeWebcam) {
+          console.log('[useProctoringMedia] Requesting webcam and microphone...')
+          // Request fresh webcam and microphone streams
+          const webcamStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true })
+          console.log('[useProctoringMedia] ✅ Webcam and microphone stream obtained:', {
+            tracks: webcamStream.getTracks().length,
+            videoTrack: webcamStream.getVideoTracks()[0]?.label,
+            audioTrack: webcamStream.getAudioTracks()[0]?.label
           })
+          onWebcamStatusChangeRef.current?.("active")
 
-          if (!event.data || event.data.size === 0) {
-            console.error('[Proctoring] Empty webcam chunk detected - skipping')
+          if (cancelled) {
+            webcamStream.getTracks().forEach((track) => track.stop())
             return
           }
 
-          // Validate minimum chunk size (should be at least 1KB for 8-second video)
-          if (event.data.size < 1000) {
-            console.warn('[Proctoring] Suspiciously small webcam chunk:', event.data.size, 'bytes')
+          webcamStreamRef.current = webcamStream
+          const mimeType = getSupportedMimeType(true) // Include audio for webcam
+          const webcamRecorder = new MediaRecorder(webcamStream, {
+            ...(mimeType && { mimeType }), // Only set if we found a supported type
+            videoBitsPerSecond: 1_200_000,
+          })
+          webcamRecorderRef.current = webcamRecorder
+          webcamSequenceRef.current = 0
+
+          webcamRecorder.ondataavailable = (event) => {
+            console.log('[Proctoring] Webcam chunk received:', {
+              blobSize: event.data?.size || 0,
+              blobType: event.data?.type || 'unknown',
+              isEmpty: !event.data || event.data.size === 0,
+              sequence: webcamSequenceRef.current
+            })
+
+            if (!event.data || event.data.size === 0) {
+              console.error('[Proctoring] Empty webcam chunk detected - skipping')
+              return
+            }
+
+            // Validate minimum chunk size (should be at least 1KB for 8-second video)
+            if (event.data.size < 1000) {
+              console.warn('[Proctoring] Suspiciously small webcam chunk:', event.data.size, 'bytes')
+            }
+
+            const currentSequence = webcamSequenceRef.current
+            webcamSequenceRef.current = currentSequence + 1
+
+            queueRef.current.webcam.push({
+              blob: event.data,
+              sequence: currentSequence,
+              durationMs: chunkDurationMs,
+              attempts: 0,
+              type: "webcam",
+            })
+            updatePending()
+            scheduleFlush("webcam")
           }
 
-          const currentSequence = webcamSequenceRef.current
-          webcamSequenceRef.current = currentSequence + 1
+          webcamRecorder.onerror = (event) => {
+            const error = event.error ?? new Error("Media recorder error")
+            onWebcamStatusChangeRef.current?.("error")
+            onErrorRef.current?.("webcam", error instanceof Error ? error : new Error(String(error)))
+          }
 
-          queueRef.current.webcam.push({
-            blob: event.data,
-            sequence: currentSequence,
-            durationMs: chunkDurationMs,
-            attempts: 0,
-            type: "webcam",
-          })
-          updatePending()
-          scheduleFlush("webcam")
+          webcamRecorder.start(chunkDurationMs)
+        } else {
+          console.log('[useProctoringMedia] Webcam recording disabled by assessment settings')
+          onWebcamStatusChangeRef.current?.("idle")
         }
-
-        webcamRecorder.onerror = (event) => {
-          const error = event.error ?? new Error("Media recorder error")
-          onWebcamStatusChangeRef.current?.("error")
-          onErrorRef.current?.("webcam", error instanceof Error ? error : new Error(String(error)))
-        }
-
-        webcamRecorder.start(chunkDurationMs)
 
         if (includeScreen) {
           try {

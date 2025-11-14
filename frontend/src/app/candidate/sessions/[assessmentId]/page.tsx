@@ -1,3 +1,6 @@
+/* eslint-disable react-hooks/exhaustive-deps */
+/* eslint-disable @typescript-eslint/no-explicit-any */
+/* eslint-disable @typescript-eslint/no-unused-vars */
 "use client"
 
 import { use, useEffect, useState, useCallback, useRef } from "react"
@@ -217,7 +220,7 @@ export default function CandidateSessionPage({ params }: CandidateSessionPagePro
                 {submittedAt ? <p className="text-xs text-muted-foreground">Submitted on {submittedAt}</p> : null}
               </div>
 
-              {summary?.score ? (
+              {summary?.score && data.assessment.settings?.showResultsToCandidate ? (
                 <div className="rounded-md border border-border bg-muted/40 p-4">
                   <p className="text-xs uppercase tracking-wide text-muted-foreground">Score</p>
                   <p className="text-lg font-semibold text-foreground">
@@ -660,6 +663,27 @@ function CandidateAssessmentShell({
     }
   }, [timeRemaining, isCompleted, submitMutation])
 
+  // Handle submit with pending uploads validation
+  const handleSubmit = () => {
+    // Check for pending uploads
+    if (pendingUploads > 0) {
+      const totalPending = pendingUploads
+      const message =
+        `You have ${totalPending} recording chunk${totalPending > 1 ? 's' : ''} still uploading.\n\n` +
+        `Submitting now may result in incomplete proctoring recordings. ` +
+        `Wait for uploads to finish?\n\n` +
+        `Click "OK" to wait, or "Cancel" to submit anyway.`
+
+      const shouldWait = window.confirm(message)
+      if (shouldWait) {
+        return // Don't submit, wait for uploads
+      }
+    }
+
+    // Proceed with submission
+    submitMutation.mutate()
+  }
+
   const formatTime = (seconds: number | null) => {
     if (seconds === null) return "No limit"
     if (seconds <= 0) return "00:00"
@@ -704,12 +728,18 @@ function CandidateAssessmentShell({
     onEvent: proctoring.recordEvent,
   })
 
+  // Check proctoring settings to determine what to record
+  const proctoringSettings = data.assessment.settings?.proctoringSettings
+  const shouldRecordScreen = shouldCapture && proctoringSettings?.recordScreen === true
+  const shouldRecordWebcam = shouldCapture && proctoringSettings?.recordWebcam === true
+
   useProctoringMediaStreams({
-    enabled: shouldCapture,
+    enabled: shouldCapture && (shouldRecordScreen || shouldRecordWebcam),
     token: session.token,
     assessmentId: data.assessment.id,
     onError: handleMediaError,
-    includeScreen: true,
+    includeScreen: shouldRecordScreen,
+    includeWebcam: shouldRecordWebcam,
     onScreenReady: handleScreenReady,
     onScreenDenied: handleScreenDenied,
     onScreenEnded: handleScreenEnded,
@@ -846,7 +876,7 @@ function CandidateAssessmentShell({
             )}
             <Button
               size="sm"
-              onClick={() => submitMutation.mutate()}
+              onClick={handleSubmit}
               disabled={isCompleted || submitMutation.isPending}
               className="gap-2"
             >
@@ -1087,8 +1117,13 @@ function CandidateAssessmentShell({
               <Button
                 variant="outline"
                 onClick={() => setCurrentIndex(currentIndex - 1)}
-                disabled={!canGoPrev}
+                disabled={!canGoPrev || !assessment.settings?.allowReviewAnswers}
                 className="gap-2"
+                title={
+                  !assessment.settings?.allowReviewAnswers
+                    ? "Review is not allowed for this assessment"
+                    : undefined
+                }
               >
                 <ChevronLeft className="h-4 w-4" />
                 Previous

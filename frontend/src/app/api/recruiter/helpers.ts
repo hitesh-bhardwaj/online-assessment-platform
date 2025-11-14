@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import type {
   AssessmentSummary,
   InvitationSummary,
@@ -277,6 +278,12 @@ export interface BackendProctoringDetails {
         microphone?: string | null
       }
     }
+    mergeStatus?: {
+      webcam?: 'pending' | 'processing' | 'completed' | 'failed'
+      screen?: 'pending' | 'processing' | 'completed' | 'failed'
+      lastAttempt?: string
+      error?: string
+    } | null
   }
 }
 
@@ -332,6 +339,12 @@ export interface RecruiterProctoringDetails {
       webcam?: string | null
       microphone?: string | null
     }
+    mergeStatus?: {
+      webcam?: 'pending' | 'processing' | 'completed' | 'failed'
+      screen?: 'pending' | 'processing' | 'completed' | 'failed'
+      lastAttempt?: string
+      error?: string
+    } | null
   }
 }
 
@@ -386,6 +399,7 @@ export function toProctoringDetails(response: BackendProctoringDetails): Recruit
         webcam: proctoring.recording?.latest?.webcam ?? undefined,
         microphone: proctoring.recording?.latest?.microphone ?? undefined,
       },
+      mergeStatus: proctoring.mergeStatus ?? undefined,
     },
   }
 }

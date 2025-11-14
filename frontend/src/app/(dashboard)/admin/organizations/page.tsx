@@ -1,7 +1,7 @@
 'use client';
 
 import { zodResolver } from '@hookform/resolvers/zod';
-import { Cross, Loader2, Pencil, X } from 'lucide-react';
+import { Loader2, Pencil, X } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { useForm, type Resolver } from 'react-hook-form';
 import * as z from 'zod';

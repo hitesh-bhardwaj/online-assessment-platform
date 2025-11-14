@@ -71,6 +71,7 @@ export async function GET(request: NextRequest) {
     const raw = response.data.users ?? []
 
     // ✅ Keep all users, even suspended. Only hide deleted ones.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const visibleRaw = raw.filter((u: any) => !u?.deletedAt && !u?.isDeleted)
 
     // Map to UI shape

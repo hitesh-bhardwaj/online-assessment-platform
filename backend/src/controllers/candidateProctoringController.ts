@@ -238,22 +238,9 @@ const candidateProctoringController = {
 
       result.proctoringReport.mediaSegments.push(segment);
 
-      // Ensure recordingUrls object exists
-      if (!result.proctoringReport.recordingUrls) {
-        result.proctoringReport.recordingUrls = {};
-      }
-
-      // Determine the recording URL based on storage type
-      let recordingUrl: string;
-      if (storageInfo.storage === 'r2') {
-        recordingUrl = storageInfo.publicUrl || storageInfo.fileKey || segmentId;
-      } else {
-        recordingUrl = storageInfo.filePath || segmentId;
-      }
-
-      result.proctoringReport.recordingUrls[normalizedType] = recordingUrl;
-
-      console.log(`[Proctoring] Recording URL updated: ${normalizedType} = ${recordingUrl} (storage: ${storageInfo.storage})`);
+      // Note: recordingUrls are NOT updated here during chunk upload
+      // They will be updated by the merge script after all chunks are combined
+      console.log(`[Proctoring] Media segment saved: ${normalizedType} segment ${normalizedSequence} (storage: ${storageInfo.storage})`);
 
       trimCollections(result);
       result.markModified('proctoringReport');

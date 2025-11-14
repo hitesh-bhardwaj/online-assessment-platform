@@ -27,7 +27,7 @@ import {
   PaginationNext,
   PaginationPrevious,
 } from "@/components/ui/pagination"
-import { toast } from "@/hooks/use-toast"
+import { toast } from "sonner"
 
 import { QuestionActions } from "./question-actions"
 import { QuestionStatusBadge } from "./question-status-badge"

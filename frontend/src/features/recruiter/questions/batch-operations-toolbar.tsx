@@ -22,7 +22,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
 import { useBatchUpdateQuestions, useBatchDeleteQuestions } from "@/hooks/use-recruiter-questions"
-import { toast } from "@/hooks/use-toast"
+import { toast } from "sonner"
 
 interface BatchOperationsToolbarProps {
   selectedIds: string[]

@@ -1,5 +1,23 @@
 "use client"
 
+import { useState, useMemo } from "react"
+import Link from "next/link"
+import { Button } from "@/components/ui/button"
+import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert"
+import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card"
+import { Input } from "@/components/ui/input"
+import { Badge } from "@/components/ui/badge"
+import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table"
+import {
+  Pagination,
+  PaginationContent,
+  PaginationItem,
+  PaginationLink,
+  PaginationPrevious,
+  PaginationNext,
+} from "@/components/ui/pagination"
+import { useRecruiterQuestions } from "@/hooks/use-recruiter-questions"
+
 // Re-export the enhanced questions view
 export { EnhancedQuestionsView as RecruiterQuestionsView } from "./questions/enhanced-questions-view"
 

@@ -130,13 +130,13 @@ async function mergeChunks(resultId: string, type: 'webcam' | 'screen', segments
   }
 }
 
-async function mergeRecordingsForResult(resultId: string) {
+export async function mergeRecordingsForResult(resultId: string) {
   try {
     const result = await AssessmentResult.findById(resultId);
 
     if (!result) {
       console.log(`❌ Result not found: ${resultId}`);
-      return;
+      throw new Error(`Result not found: ${resultId}`);
     }
 
     console.log(`\n📹 Processing Result: ${resultId}`);
@@ -152,6 +152,22 @@ async function mergeRecordingsForResult(resultId: string) {
     const screenSegments = segments.filter(s => s.type === 'screen' && s.storage === 'local');
 
     console.log(`Found ${webcamSegments.length} webcam + ${screenSegments.length} screen segments`);
+
+    // Initialize merge status
+    if (!result.proctoringReport.mergeStatus) {
+      result.proctoringReport.mergeStatus = {};
+    }
+
+    // Set status to processing
+    if (webcamSegments.length > 0) {
+      result.proctoringReport.mergeStatus.webcam = 'processing';
+    }
+    if (screenSegments.length > 0) {
+      result.proctoringReport.mergeStatus.screen = 'processing';
+    }
+    result.proctoringReport.mergeStatus.lastAttempt = new Date();
+    result.markModified('proctoringReport');
+    await result.save();
 
     if (webcamSegments.length === 0 && screenSegments.length === 0) {
       console.log(`❌ No local segments to merge`);
@@ -183,6 +199,10 @@ async function mergeRecordingsForResult(resultId: string) {
         }
         // Use R2 URL if available, otherwise use local path
         result.proctoringReport.recordingUrls.webcam = webcamResult.r2Url || webcamResult.outputPath;
+        // Update merge status to completed
+        if (result.proctoringReport.mergeStatus) {
+          result.proctoringReport.mergeStatus.webcam = 'completed';
+        }
         console.log(`  Webcam URL: ${webcamResult.r2Url ? 'R2' : 'Local'} - ${result.proctoringReport.recordingUrls.webcam}`);
       }
 
@@ -192,6 +212,10 @@ async function mergeRecordingsForResult(resultId: string) {
         }
         // Use R2 URL if available, otherwise use local path
         result.proctoringReport.recordingUrls.screen = screenResult.r2Url || screenResult.outputPath;
+        // Update merge status to completed
+        if (result.proctoringReport.mergeStatus) {
+          result.proctoringReport.mergeStatus.screen = 'completed';
+        }
         console.log(`  Screen URL: ${screenResult.r2Url ? 'R2' : 'Local'} - ${result.proctoringReport.recordingUrls.screen}`);
       }
 
@@ -230,6 +254,38 @@ async function mergeRecordingsForResult(resultId: string) {
 
   } catch (error) {
     console.error(`❌ Error processing result ${resultId}:`, error);
+
+    // Update merge status to failed
+    try {
+      const result = await AssessmentResult.findById(resultId);
+      if (result && result.proctoringReport) {
+        if (!result.proctoringReport.mergeStatus) {
+          result.proctoringReport.mergeStatus = {};
+        }
+
+        // Mark failed status for types that were being processed
+        const segments = result.proctoringReport.mediaSegments || [];
+        const hasWebcam = segments.some(s => s.type === 'webcam' && s.storage === 'local');
+        const hasScreen = segments.some(s => s.type === 'screen' && s.storage === 'local');
+
+        if (hasWebcam) {
+          result.proctoringReport.mergeStatus.webcam = 'failed';
+        }
+        if (hasScreen) {
+          result.proctoringReport.mergeStatus.screen = 'failed';
+        }
+
+        result.proctoringReport.mergeStatus.lastAttempt = new Date();
+        result.proctoringReport.mergeStatus.error = error instanceof Error ? error.message : String(error);
+
+        result.markModified('proctoringReport');
+        await result.save();
+      }
+    } catch (updateError) {
+      console.error(`Failed to update merge status:`, updateError);
+    }
+
+    throw error; // Re-throw for queue retry logic
   }
 }
 

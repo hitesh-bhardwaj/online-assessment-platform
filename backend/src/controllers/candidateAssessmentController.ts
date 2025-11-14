@@ -3,7 +3,7 @@ import mongoose from 'mongoose';
 
 import { AuthenticatedRequest } from '../middleware/auth';
 import { Invitation, Question, AssessmentResult } from '../models';
-import { startRecordingMergeJob } from '../utils/recording-merge';
+import { queueRecordingMerge } from '../utils/recording-queue';
 
 type QuestionOption = {
   id: string;
@@ -143,7 +143,16 @@ const candidateAssessmentController = {
       const questionRefs: Array<{ questionId: mongoose.Types.ObjectId; order: number; points: number }> =
         Array.isArray(assessmentDoc.questions) ? [...assessmentDoc.questions] : [];
 
+      // Sort by order first
       questionRefs.sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+
+      // Shuffle questions if enabled (Fisher-Yates algorithm)
+      if (assessmentDoc.settings?.shuffleQuestions === true) {
+        for (let i = questionRefs.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [questionRefs[i], questionRefs[j]] = [questionRefs[j], questionRefs[i]];
+        }
+      }
 
       const questionIds = questionRefs
         .map((ref) => toSafeObjectId(ref.questionId))
@@ -176,11 +185,19 @@ const candidateAssessmentController = {
           };
 
           if (questionDoc.type === 'mcq' || questionDoc.type === 'msq') {
-            const options: QuestionOption[] =
+            let options: QuestionOption[] =
               questionDoc.options?.map((option) => ({
                 id: option.id,
                 text: option.text,
               })) ?? [];
+
+            // Shuffle options if enabled (Fisher-Yates algorithm)
+            if (assessmentDoc.settings?.shuffleOptions === true) {
+              for (let i = options.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [options[i], options[j]] = [options[j], options[i]];
+              }
+            }
 
             return {
               ...base,
@@ -255,7 +272,10 @@ const candidateAssessmentController = {
           },
           progress,
           resultSummary:
-            existingResult && existingResult.status === 'completed' && existingResult.score
+            existingResult &&
+            existingResult.status === 'completed' &&
+            existingResult.score &&
+            assessmentDoc.settings?.showResultsToCandidate === true
               ? {
                   score: existingResult.score,
                   submittedAt: existingResult.submittedAt,
@@ -423,13 +443,20 @@ const candidateAssessmentController = {
       }
 
       if (result.status === 'completed') {
+        // Check if results should be shown to candidate based on assessment settings
+        const showResultsToCandidate = assessmentDoc.settings?.showResultsToCandidate ?? false;
+
         return res.json({
           success: true,
           data: {
-            summary: {
-              score: result.score,
-              submittedAt: result.submittedAt,
-            },
+            summary: showResultsToCandidate
+              ? {
+                  score: result.score,
+                  submittedAt: result.submittedAt,
+                }
+              : {
+                  submittedAt: result.submittedAt,
+                },
           },
         });
       }
@@ -531,17 +558,24 @@ const candidateAssessmentController = {
       // Start recording merge job in background (non-blocking)
       // This will merge video chunks and upload to R2 automatically
       if (result.proctoringReport?.mediaSegments && result.proctoringReport.mediaSegments.length > 0) {
-        console.log(`[submitAssessment] Starting background recording merge for result: ${result._id}`);
-        startRecordingMergeJob(result._id.toString());
+        console.log(`[submitAssessment] Queuing recording merge for result: ${result._id}`);
+        queueRecordingMerge(result._id.toString());
       }
+
+      // Check if results should be shown to candidate based on assessment settings
+      const showResultsToCandidate = assessmentDoc.settings?.showResultsToCandidate ?? false;
 
       res.json({
         success: true,
         data: {
-          summary: {
-            score: result.score,
-            submittedAt: result.submittedAt,
-          },
+          summary: showResultsToCandidate
+            ? {
+                score: result.score,
+                submittedAt: result.submittedAt,
+              }
+            : {
+                submittedAt: result.submittedAt,
+              },
         },
       });
     } catch (error) {

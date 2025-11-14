@@ -13,7 +13,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { useDuplicateQuestion } from "@/hooks/use-recruiter-questions"
-import { toast } from "@/hooks/use-toast"
+import { toast } from "sonner"
 
 import { QuestionPreviewDialog } from "./question-preview-dialog"
 import { QuestionStatsDialog } from "./question-stats-dialog"

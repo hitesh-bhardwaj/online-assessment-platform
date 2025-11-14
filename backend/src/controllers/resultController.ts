@@ -464,6 +464,7 @@ export const resultController = {
                 microphone: report.recordingUrls?.microphone ?? null
               }
             },
+            mergeStatus: report.mergeStatus ?? null,
             flags,
             events,
             mediaSegments

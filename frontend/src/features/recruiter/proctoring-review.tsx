@@ -1,7 +1,7 @@
 "use client"
 
 import { useMemo } from "react"
-import { AlertTriangle, ShieldCheck, ShieldHalf, ShieldX } from "lucide-react"
+import { AlertTriangle, ShieldCheck, ShieldHalf, ShieldX, Loader2, CheckCircle2, XCircle } from "lucide-react"
 
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Badge } from "@/components/ui/badge"
@@ -22,18 +22,67 @@ const riskIcon: Record<"low" | "medium" | "high", JSX.Element> = {
 }
 
 type MediaType = "screen" | "webcam" | "microphone"
+type MergeStatus = 'pending' | 'processing' | 'completed' | 'failed'
 
 function MediaBlock({
   heading,
   description,
   source,
   type,
+  mergeStatus,
 }: {
   heading: string
   description: string
   source?: { segmentId: string; src: string; mimeType?: string; recordedAt?: string }
   type: MediaType
+  mergeStatus?: MergeStatus | null
 }) {
+  // Show processing status if merge is in progress
+  if (mergeStatus === 'pending' || mergeStatus === 'processing') {
+    return (
+      <div className="space-y-2 rounded-lg border border-amber-200 bg-amber-50 p-4">
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <Loader2 className="h-4 w-4 animate-spin text-amber-600" />
+            <p className="text-sm font-semibold text-amber-900">{heading}</p>
+          </div>
+          <Badge variant="outline" className="border-amber-300 bg-amber-100 text-xs uppercase tracking-wide text-amber-700">
+            {type}
+          </Badge>
+        </div>
+        <div className="space-y-1">
+          <p className="text-xs text-amber-700">
+            {mergeStatus === 'pending' ? '⏳ Merge pending...' : '🔄 Processing recording...'}
+          </p>
+          <p className="text-xs text-amber-600">
+            This may take 1-3 minutes. The page will auto-refresh every 10 seconds.
+          </p>
+        </div>
+      </div>
+    )
+  }
+
+  // Show error status if merge failed
+  if (mergeStatus === 'failed') {
+    return (
+      <div className="space-y-2 rounded-lg border border-red-200 bg-red-50 p-4">
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <XCircle className="h-4 w-4 text-red-600" />
+            <p className="text-sm font-semibold text-red-900">{heading}</p>
+          </div>
+          <Badge variant="outline" className="border-red-300 bg-red-100 text-xs uppercase tracking-wide text-red-700">
+            {type}
+          </Badge>
+        </div>
+        <p className="text-xs text-red-700">
+          ❌ Recording merge failed. Individual chunks may still be available.
+        </p>
+      </div>
+    )
+  }
+
+  // No source available (and not processing)
   if (!source) {
     return (
       <div className="rounded-lg border border-dashed border-border/60 bg-muted/40 p-4 text-sm text-muted-foreground">
@@ -43,16 +92,22 @@ function MediaBlock({
     )
   }
 
+  // Successfully completed - show video/audio player
   return (
     <div className="space-y-2 rounded-lg border border-border bg-card p-3">
       <div className="flex items-center justify-between gap-3">
-        <div>
-          <p className="text-sm font-semibold text-foreground">{heading}</p>
-          {source.recordedAt ? (
-            <p className="text-xs text-muted-foreground">
-              Captured {new Date(source.recordedAt).toLocaleString()}
-            </p>
-          ) : null}
+        <div className="flex items-center gap-2">
+          {mergeStatus === 'completed' && (
+            <CheckCircle2 className="h-4 w-4 text-emerald-500" />
+          )}
+          <div>
+            <p className="text-sm font-semibold text-foreground">{heading}</p>
+            {source.recordedAt ? (
+              <p className="text-xs text-muted-foreground">
+                Captured {new Date(source.recordedAt).toLocaleString()}
+              </p>
+            ) : null}
+          </div>
         </div>
         <Badge variant="outline" className="text-xs uppercase tracking-wide">
           {type}
@@ -224,18 +279,21 @@ export function RecruiterProctoringReview({ resultId, open, onOpenChange }: Recr
                 description="No screen capture was received for this session."
                 source={mediaSources.screen}
                 type="screen"
+                mergeStatus={data.proctoring.mergeStatus?.screen}
               />
               <MediaBlock
                 heading="Webcam recording"
                 description="No webcam capture was received for this session."
                 source={mediaSources.webcam}
                 type="webcam"
+                mergeStatus={data.proctoring.mergeStatus?.webcam}
               />
               <MediaBlock
                 heading="Microphone capture"
                 description="Audio capture is unavailable for this submission."
                 source={mediaSources.microphone}
                 type="microphone"
+                mergeStatus={undefined}
               />
             </div>
 

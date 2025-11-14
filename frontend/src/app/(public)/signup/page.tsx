@@ -2,7 +2,7 @@
 
 import Image from "next/image"
 import Link from "next/link"
-import { useEffect, useMemo, useState } from "react"
+import { Suspense, useEffect, useMemo, useState } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
@@ -42,7 +42,7 @@ const PLAN_COPY: Record<Plan, { title: string; description: string }> = {
   },
 }
 
-export default function SignupPage() {
+function SignupPageContent() {
   const params = useSearchParams()
   const router = useRouter()
 
@@ -396,5 +396,36 @@ export default function SignupPage() {
         </div>
       </div>
     </div>
+  )
+}
+
+// Loading fallback for Suspense
+function SignupPageFallback() {
+  return (
+    <div className="relative flex min-h-screen items-center justify-center overflow-hidden">
+      <Image
+        src="/assets/background-img.jpg"
+        alt="Collaborative workspace illustration"
+        fill
+        priority
+        className="object-cover"
+        sizes="100vw"
+      />
+      <div className="relative z-10 flex w-full max-w-xl justify-center px-6 py-16 md:py-24 bg-black/20 rounded-2xl border border-white/20 shadow-2xl backdrop-blur-lg">
+        <div className="flex w-full max-w-xl flex-col items-center justify-center gap-6">
+          <div className="h-8 w-8 animate-spin rounded-full border-4 border-slate-300 border-t-primary"></div>
+          <p className="text-sm text-slate-100">Loading...</p>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// Wrapper component with Suspense boundary
+export default function SignupPage() {
+  return (
+    <Suspense fallback={<SignupPageFallback />}>
+      <SignupPageContent />
+    </Suspense>
   )
 }

@@ -66,6 +66,12 @@ export interface IProctoringReport {
     microphone?: string;
   };
   mediaSegments?: IProctoringMediaSegment[];
+  mergeStatus?: {
+    webcam?: 'pending' | 'processing' | 'completed' | 'failed';
+    screen?: 'pending' | 'processing' | 'completed' | 'failed';
+    lastAttempt?: Date;
+    error?: string;
+  };
 }
 
 export interface IPerformanceMetrics {
@@ -243,7 +249,19 @@ const ProctoringReportSchema = new Schema<IProctoringReport>({
       size: { type: Number, min: 0 },
       sequence: { type: Number, min: 0 }
     }, { _id: false })
-  ]
+  ],
+  mergeStatus: {
+    webcam: {
+      type: String,
+      enum: ['pending', 'processing', 'completed', 'failed']
+    },
+    screen: {
+      type: String,
+      enum: ['pending', 'processing', 'completed', 'failed']
+    },
+    lastAttempt: { type: Date },
+    error: { type: String, trim: true, maxlength: 500 }
+  }
 });
 
 const PerformanceMetricsSchema = new Schema<IPerformanceMetrics>({
