@@ -1,0 +1,99 @@
+{
+  "info": {
+    "name": "Assessment Platform - Debug",
+    "description": "Development debug endpoints for MongoDB inspection",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Collections",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "http://localhost:5002/api/debug/collections",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "5002",
+          "path": ["api", "debug", "collections"]
+        },
+        "description": "Get count of all collections"
+      }
+    },
+    {
+      "name": "Statistics",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "http://localhost:5002/api/debug/stats",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "5002",
+          "path": ["api", "debug", "stats"]
+        },
+        "description": "Get database statistics"
+      }
+    },
+    {
+      "name": "All Organizations",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "http://localhost:5002/api/debug/organizations",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "5002",
+          "path": ["api", "debug", "organizations"]
+        },
+        "description": "Get all organizations"
+      }
+    },
+    {
+      "name": "Organization by Domain",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "http://localhost:5002/api/debug/organization/testorg.com",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "5002",
+          "path": ["api", "debug", "organization", "testorg.com"]
+        },
+        "description": "Get organization by domain with users"
+      }
+    },
+    {
+      "name": "All Users",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "http://localhost:5002/api/debug/users",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "5002",
+          "path": ["api", "debug", "users"]
+        },
+        "description": "Get all users"
+      }
+    },
+    {
+      "name": "User by Email",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "http://localhost:5002/api/debug/users/admin@testorg.com",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "5002",
+          "path": ["api", "debug", "users", "admin@testorg.com"]
+        },
+        "description": "Get user by email"
+      }
+    }
+  ]
+}

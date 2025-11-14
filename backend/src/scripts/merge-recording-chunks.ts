@@ -8,7 +8,7 @@ import AssessmentResult from '../models/AssessmentResult';
 import { uploadMergedRecording } from '../utils/storage';
 
 const execAsync = promisify(exec);
-const MONGO_URI = process.env.MONGO_URI || 'mongodb://localhost:27017/oap';
+const MONGO_URI = process.env.MONGODB_URI || process.env.MONGODB_ATLAS_URI || 'mongodb://localhost:27017/oap';
 
 interface MergeResult {
   type: 'webcam' | 'screen';
@@ -352,4 +352,7 @@ async function main() {
   }
 }
 
-main();
+// Only run main() if this script is executed directly, not when imported as a module
+if (require.main === module) {
+  main();
+}
