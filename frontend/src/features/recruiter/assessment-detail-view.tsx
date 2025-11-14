@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { useParams, useRouter } from "next/navigation"
-import { Loader2, PlusCircle, Trash2, ArrowUp, ArrowDown } from "lucide-react"
+import { Loader2, PlusCircle, Trash2, ArrowUp, ArrowDown, Lock } from "lucide-react"
 import { Bar, BarChart, CartesianGrid, Cell, Line, LineChart, Pie, PieChart, XAxis, YAxis } from "recharts"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { useForm, type Control, type Path } from "react-hook-form"
@@ -121,6 +121,7 @@ export function RecruiterAssessmentDetailView({ basePath = "/recruiter" }: { bas
   const updateMutation = useUpdateRecruiterAssessment()
 
   const isMutationPending = updateMutation.isPending
+  const isPublished = data?.isPublished ?? false
 
   const normalizedSettings = useMemo(() => normalizeSettings(data?.settings), [data?.settings])
   const settingsFormValues = useMemo(() => mapNormalizedToFormValues(normalizedSettings), [normalizedSettings])
@@ -128,7 +129,7 @@ export function RecruiterAssessmentDetailView({ basePath = "/recruiter" }: { bas
   const settingsForm = useForm<SettingsFormValues>({
     resolver: zodResolver(settingsFormSchema),
     defaultValues: settingsFormValues,
-    mode: "onChange",
+    mode: "onSubmit",
   })
 
   useEffect(() => {
@@ -138,12 +139,22 @@ export function RecruiterAssessmentDetailView({ basePath = "/recruiter" }: { bas
   const proctoringEnabled = settingsForm.watch("proctoring.enabled")
   const { isDirty: isSettingsDirty } = settingsForm.formState
   const isSettingsSubmitting = isMutationPending
-
-  const handleSettingsSubmit = settingsForm.handleSubmit(async (values) => {
+  const handleSettingsSubmit = async (e: React.FormEvent) => {
+  e.preventDefault()
+  
+  await settingsForm.handleSubmit(async (values) => {
     if (!assessmentId) return
+    console.log('Form submitted with values:', values)
+  console.log('Assessment ID:', assessmentId)
+  
 
-    const payloadSettings = createSettingsPayloadFromForm(values)
-    const baselineSettings = createSettingsPayloadFromNormalized(normalizedSettings)
+  const payloadSettings = createSettingsPayloadFromForm(values)
+  const baselineSettings = createSettingsPayloadFromNormalized(normalizedSettings)
+  
+  console.log('Payload settings:', payloadSettings)
+  console.log('Baseline settings:', baselineSettings)
+  console.log('Are equal?', settingsPayloadsEqual(payloadSettings, baselineSettings))
+
 
     if (settingsPayloadsEqual(payloadSettings, baselineSettings)) {
       settingsForm.reset(settingsFormValues)
@@ -155,7 +166,10 @@ export function RecruiterAssessmentDetailView({ basePath = "/recruiter" }: { bas
     }
 
     try {
-      const updated = await updateMutation.mutateAsync({ id: assessmentId, body: { settings: payloadSettings } })
+      const updated = await updateMutation.mutateAsync({ 
+        id: assessmentId, 
+        body: { settings: payloadSettings } 
+      })
       const nextNormalized = normalizeSettings(updated.settings)
       const nextFormValues = mapNormalizedToFormValues(nextNormalized)
       settingsForm.reset(nextFormValues)
@@ -173,7 +187,8 @@ export function RecruiterAssessmentDetailView({ basePath = "/recruiter" }: { bas
         variant: "destructive",
       })
     }
-  })
+  })(e)
+}
 
   const questionRows = useMemo<QuestionOutlineRow[]>(() => {
     if (!data?.questions?.length) return []
@@ -318,6 +333,7 @@ export function RecruiterAssessmentDetailView({ basePath = "/recruiter" }: { bas
   const proctoringVariants = useMemo(() => proctoringFlagVariant(), [])
   const createInvitationMutation = useCreateRecruiterInvitation()
   const cancelInvitationMutation = useCancelRecruiterInvitation()
+  const [isDuplicating, setIsDuplicating] = useState(false)
 
   useEffect(() => {
     if (!isInviteDialogOpen) {
@@ -635,6 +651,38 @@ export function RecruiterAssessmentDetailView({ basePath = "/recruiter" }: { bas
     [assessmentId, createInvitationMutation, refetchInvitations, showToast]
   )
 
+  const handleDuplicate = async () => {
+  if (!assessmentId) return
+  
+  try {
+    const response = await apiRequest<{ success: boolean; message: string; data: { _id: string } }>({
+      url: `/recruiter/assessments/${assessmentId}/clone`,
+      method: "POST",
+    })
+    
+    showToast({
+      title: "Assessment duplicated",
+      description: "The assessment has been successfully duplicated.",
+      variant: "success",
+    })
+    
+    // Invalidate queries to refresh the list
+    queryClient.invalidateQueries({ queryKey: recruiterKeys.assessments(), exact: false })
+    
+    // Navigate to the duplicated assessment
+    router.push(`${basePath}/assessments/${response.data._id}`)
+    
+  } catch (duplicateError) {
+    const message =
+      duplicateError instanceof Error ? duplicateError.message : "Unable to duplicate assessment"
+    showToast({
+      title: "Duplication failed",
+      description: message,
+      variant: "destructive",
+    })
+  }
+}
+
   const handleCancelInvitation = useCallback(
     async (invitationId: string) => {
       setCancelInvitationId(invitationId)
@@ -713,6 +761,7 @@ export function RecruiterAssessmentDetailView({ basePath = "/recruiter" }: { bas
     }
   }
 
+
   if (!assessmentId) {
     return (
       <Alert variant="destructive">
@@ -768,6 +817,7 @@ export function RecruiterAssessmentDetailView({ basePath = "/recruiter" }: { bas
         onPublishToggle={handlePublishToggle}
         onArchive={handleArchive}
         onSaveMetadata={handleSaveMetadata}
+        onDuplicate={handleDuplicate} 
       />
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
@@ -995,9 +1045,12 @@ export function RecruiterAssessmentDetailView({ basePath = "/recruiter" }: { bas
           </Card>
         </TabsContent>
 
-        <TabsContent value="settings">
+        {/* <TabsContent value="settings">
           <Form {...settingsForm}>
-            <form className="space-y-4" onSubmit={handleSettingsSubmit}>
+            <form className="space-y-4" onSubmit={(e) => {
+  e.preventDefault()
+  handleSettingsSubmit(e)
+}}>
               <Card>
                 <CardHeader>
                   <CardTitle>Assessment settings</CardTitle>
@@ -1110,7 +1163,7 @@ export function RecruiterAssessmentDetailView({ basePath = "/recruiter" }: { bas
                 </CardContent>
               </Card>
               <div className="flex flex-wrap items-center gap-3">
-                <Button type="submit" disabled={!isSettingsDirty || isSettingsSubmitting}>
+                <Button type="submit"  disabled={!isSettingsDirty || isSettingsSubmitting}>
                   {isSettingsSubmitting ? (
                     <>
                       <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -1131,7 +1184,157 @@ export function RecruiterAssessmentDetailView({ basePath = "/recruiter" }: { bas
               </div>
             </form>
           </Form>
-        </TabsContent>
+        </TabsContent> */}
+        <TabsContent value="settings" >
+    <Form {...settingsForm} >
+      <form className="space-y-4 relative" onSubmit={handleSettingsSubmit} >
+        <Card>
+          <CardHeader>
+            <CardTitle>Assessment settings</CardTitle>
+            <CardDescription>Adjust timing, attempts, review options, and proctoring signals.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-6 relative">
+            {isPublished && (
+      <div className="absolute inset-0 z-10 flex items-center justify-center rounded-lg bg-background/80 backdrop-blur-sm">
+        <div className="text-center">
+          <Lock className="mx-auto mb-4 h-12 w-12 text-muted-foreground" />
+          <h3 className="mb-2 text-lg font-semibold">Settings Locked</h3>
+          <p className="text-sm text-muted-foreground">
+            Move the assessment to draft mode to edit settings
+          </p>
+        </div>
+      </div>
+    )} 
+            <div className="grid gap-6 lg:grid-cols-2 ">
+              
+              <div className="space-y-4">
+                <SettingsNumberField
+                  control={settingsForm.control}
+                  name="timeLimit"
+                  label="Time limit"
+                  helper="Minutes candidates have to complete the assessment."
+                  min={5}
+                  max={480}
+                />
+                <SettingsNumberField
+                  control={settingsForm.control}
+                  name="passingScore"
+                  label="Passing score"
+                  helper="Required score in points. Leave blank to keep hidden."
+                  min={0}
+                  max={100}
+                  allowEmpty
+                />
+                <SettingsNumberField
+                  control={settingsForm.control}
+                  name="attemptsAllowed"
+                  label="Attempts allowed"
+                  helper="Number of retries permitted per candidate."
+                  min={1}
+                  max={10}
+                />
+              </div>
+              <div className="space-y-4">
+                {/* <ToggleSettingField
+                  control={settingsForm.control}
+                  name="shuffleQuestions"
+                  label="Shuffle questions"
+                  description="Randomize question order for each candidate."
+                /> */}
+                <ToggleSettingField
+                  control={settingsForm.control}
+                  name="shuffleOptions"
+                  label="Shuffle options"
+                  description="Randomize answer option order within each question."
+                />
+                <ToggleSettingField
+                  control={settingsForm.control}
+                  name="allowReviewAnswers"
+                  label="Allow review before submit"
+                  description="Let candidates revisit answers before final submission."
+                />
+                <ToggleSettingField
+                  control={settingsForm.control}
+                  name="showResultsToCandidate"
+                  label="Show results immediately"
+                  description="Reveal scores to candidates after completion."
+                />
+                <ToggleSettingField
+                  control={settingsForm.control}
+                  name="autoSubmitOnTimeUp"
+                  label="Auto submit on time up"
+                  description="Automatically submit responses when time expires."
+                />
+              </div>
+            </div>
+            <div className="space-y-4 rounded-lg border border-border/60 bg-muted/30 p-4">
+              <div>
+                <h3 className="text-sm font-semibold text-muted-foreground">Proctoring</h3>
+                <p className="text-xs text-muted-foreground">Decide which monitoring signals you need for this assessment.</p>
+              </div>
+              <div className="grid gap-3 md:grid-cols-2">
+                <ToggleSettingField
+                  control={settingsForm.control}
+                  name="proctoring.enabled"
+                  label="Enable proctoring"
+                  description="Collect monitoring signals for exam integrity."
+                />
+                <ToggleSettingField
+                  control={settingsForm.control}
+                  name="proctoring.recordScreen"
+                  label="Record screen"
+                  description="Capture candidate screen during the assessment."
+                  disabled={!proctoringEnabled}
+                />
+                <ToggleSettingField
+                  control={settingsForm.control}
+                  name="proctoring.recordWebcam"
+                  label="Record webcam"
+                  description="Capture webcam footage during the assessment."
+                  disabled={!proctoringEnabled}
+                />
+                <ToggleSettingField
+                  control={settingsForm.control}
+                  name="proctoring.detectTabSwitch"
+                  label="Detect tab switch"
+                  description="Flag when a candidate switches away from the assessment tab."
+                  disabled={!proctoringEnabled}
+                />
+              </div>
+            </div>
+            {isSettingsDirty ? (
+              <InlineToast
+                variant="default"
+                title="Unsaved changes"
+                description="Save updates or discard to keep the current configuration."
+              />
+            ) : null}
+          </CardContent>
+        </Card>
+        <div className="flex flex-wrap items-center gap-3">
+          <Button type="submit" disabled={!isSettingsDirty || isSettingsSubmitting}>
+            {isSettingsSubmitting ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Saving…
+              </>
+            ) : (
+              "Save changes"
+            )}
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            disabled={!isSettingsDirty || isSettingsSubmitting}
+            onClick={() => settingsForm.reset(settingsFormValues)}
+          >
+            Discard
+          </Button>
+        </div>
+      </form>
+    </Form>
+ 
+</TabsContent>
         <TabsContent value="candidates" className="space-y-4">
           <AssessmentCandidatesTab
             invitations={invitations}

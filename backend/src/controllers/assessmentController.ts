@@ -1,6 +1,7 @@
 import { Response } from 'express';
 import { Assessment, SystemLog, Question } from '../models';
 import { AuthenticatedRequest } from '../middleware/auth';
+import { Request, Response } from 'express';
 
 // Helper function to get user info for logging
 const getUserInfo = (req: AuthenticatedRequest) => ({
@@ -992,3 +993,49 @@ export const assessmentController = {
 };
 
 export default assessmentController;
+
+// In your assessmentController.ts
+
+export const duplicateAssessment = async (req: Request, res: Response) => {
+  try {
+    const { assessmentId } = req.params
+    
+    // Fetch the original assessment
+    const originalAssessment = await Assessment.findById(assessmentId)
+    
+    if (!originalAssessment) {
+      return res.status(404).json({
+        success: false,
+        message: 'Assessment not found'
+      })
+    }
+    
+    // Create exact duplicate
+    const duplicatedAssessment = new Assessment({
+      title: originalAssessment.title,  // Keep same title (no "Copy" suffix)
+      type: originalAssessment.type,
+      description: originalAssessment.description,
+      instructions: originalAssessment.instructions,
+      status: originalAssessment.status,  // Keep same status
+      questions: originalAssessment.questions,  // All questions
+      settings: originalAssessment.settings,  // All settings
+      recruiterId: req.user.id,  // Or originalAssessment.recruiterId
+      // Add any other fields
+    })
+    
+    await duplicatedAssessment.save()
+    
+    return res.status(201).json({
+      success: true,
+      message: 'Assessment duplicated successfully',
+      data: duplicatedAssessment
+    })
+    
+  } catch (error) {
+    console.error('Duplicate assessment error:', error)
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to duplicate assessment'
+    })
+  }
+}
